@@ -270,6 +270,8 @@ pub unsafe fn draw_normal_object(
     Ok(())
 }
 
+//TODO(teddy) Remove the scale, A wrapper function will be use to load the specified font sizes
+//Replace the scale with the font's pixel height
 pub unsafe fn draw_text(
     text_vao: u32,
     text_vbo: u32,
@@ -277,7 +279,7 @@ pub unsafe fn draw_text(
     shader_id: u32,
     text: &str,
     mut x: f32,
-    y: f32,
+    mut y: f32,
     scale: f32,
     color: Vector3<f32>,
 ) {
@@ -286,6 +288,9 @@ pub unsafe fn draw_text(
 
     gl::UseProgram(shader_id);
 
+    //NOTE(teddy) Flip the y axis
+    //TODO(teddy): Use the font-char's height to calculate the reverse cords
+    y = engine.camera.view_port.1 as f32 - (y + 10.0);
     let (width, height) = engine.camera.view_port;
 
     let projection: Matrix4<f32> = Matrix4::new_orthographic(0.0, width as f32, 0.0, height as f32, -1.0, 1.0);

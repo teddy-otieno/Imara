@@ -30,6 +30,7 @@ use systems::physics::Physics;
 use systems::render_system::Renderer;
 use systems::system::{System, Systems};
 use ui::ui::{init_ui, add_ui_element, TextView};
+use crate::utils::Cords;
 
 fn main() {
     let display = gl_bindings::init_gl_window_context((1000, 600), "Imara");
@@ -145,9 +146,9 @@ fn run(display: Display) {
 
     init_ui(&mut engine, &mut world);
 
-    let text_view = Box::new(TextView::new(String::from("Hello world"), (10.0, 10.0), 1.0));
-    let text_view_1 = Box::new(TextView::new(String::from("Another hellow rodl"), (100.0, 100.0), 1.0));
-    let text_view_2 = Box::new(TextView::new(String::from("This ui is working okay"), (200.0, 200.0), 1.0));
+    let text_view = Box::new(TextView::new(String::from("Hello world"), Cords { x: 10.0, y: 10.0 }, 1.0, None));
+    let text_view_1 = Box::new(TextView::new(String::from("Another hellow rodl"), Cords { x: 100.0, y: 100.0 }, 1.0, None));
+    let text_view_2 = Box::new(TextView::new(String::from("This ui is working okay"), Cords { x: 200.0, y: 200.0 }, 1.0, None));
     add_ui_element(&mut engine, text_view);
     add_ui_element(&mut engine, text_view_1);
     add_ui_element(&mut engine, text_view_2);

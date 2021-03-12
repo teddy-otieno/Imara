@@ -11,6 +11,7 @@ use crate::game_world::components::HighlightComponent;
 use crate::game_world::world::{EntityID, World, FONT_ASSETS_DIR};
 use crate::gl_bindings::Display;
 use crate::ui::ui::{View, propagate_cursor_pos_to_ui};
+use crate::utils::Cords;
 
 #[derive(Debug)]
 pub enum Event {
@@ -87,7 +88,7 @@ impl Engine {
                         self.camera.update_look(*x, *y);
                     }
 
-                    let cords = (*x as f32, *y as f32);
+                    let cords = Cords { x: *x as f32, y: *y as f32 };
 
                     self.camera.new_cords = cords;
                     propagate_cursor_pos_to_ui(self, cords)
@@ -95,7 +96,7 @@ impl Engine {
 
                 WindowEvent::MouseButton(_button, _action, _modifiers) => {
                     let direction = compute_ray_from_mouse_cords(
-                        self.camera.new_cords,
+                        (self.camera.new_cords.x, self.camera.new_cords.y),
                         self.camera.view_port,
                         self.camera.perspective(),
                         self.camera.view(),
@@ -213,7 +214,7 @@ enum CameraMovement {
 pub struct Camera {
     pub position: Vector3<f32>,
     pub previous_cords: (f32, f32),
-    pub new_cords: (f32, f32),
+    pub new_cords: Cords<f32>,
     pub camera_front: Vector3<f32>,
     pub first_move: bool,
     pub fov: f32,
@@ -234,7 +235,7 @@ impl Camera {
             yaw: -90.0,
             pitch: 0.0,
             previous_cords: (0.0, 0.0),
-            new_cords: (0.0, 0.0),
+            new_cords: Cords { x: 0.0, y: 0.0 },
             view_port: (1000, 600),
         }
     }
@@ -418,6 +419,9 @@ pub struct FontChar {
     pub advance: i32,
 }
 
+
+//TODO(teddy) Return the font-face loaded
+//Reuse the font-face incase the ui will require different font sizes
 pub unsafe fn load_fonts() -> Result<HashMap<char, FontChar>, FontError> {
     let mut ft_lib: freetype::FT_Library = std::ptr::null_mut();
     if freetype::FT_Init_FreeType(&mut ft_lib) != 0 {
@@ -431,7 +435,7 @@ pub unsafe fn load_fonts() -> Result<HashMap<char, FontChar>, FontError> {
         return Err(FontError::UnableToLoadFont);
     }
 
-    freetype::FT_Set_Pixel_Sizes(font_face, 0, 48);
+    freetype::FT_Set_Pixel_Sizes(font_face, 0, 24);
 
     let mut characters = HashMap::new();
 

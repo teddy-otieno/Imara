@@ -46,7 +46,7 @@ pub struct Engine {
     pub dir_lights: Light,
     pub pressed_keys: Vec<Key>,
     pub select_mode: bool,
-    pub characters: HashMap<char, FontChar>,
+    pub font_face: FontFace,
     view_toggle: bool,
     cursor_mode_toggle: bool,
 
@@ -54,8 +54,9 @@ pub struct Engine {
     pub ui_frame_buffer: Option<u32>,
 }
 
+//TODO(teddy) have an init routine
 impl Engine {
-    pub fn new(display: Display, characters: HashMap<char, FontChar>) -> Self {
+    pub fn new(display: Display, font_face: FontFace) -> Self {
         Self {
             display,
             camera: Camera::new(),
@@ -67,7 +68,7 @@ impl Engine {
             },
             select_mode: false,
             cursor_mode_toggle: false,
-            characters,
+            font_face,
             ui_view: vec![],
             ui_frame_buffer: None,
         }
@@ -405,6 +406,12 @@ pub fn camera_behaviour(engine: &mut Engine) {
     }
 }
 
+pub struct FontFace {
+    font_name: String, //TODO(teddy) Get the name of the font from the ttf files
+    pub font_size: u8,    //Similar to the font-size
+    pub chars: HashMap<char, FontChar>
+}
+
 #[derive(Debug)]
 pub enum FontError {
     FailedToLoadFontLib,
@@ -422,7 +429,10 @@ pub struct FontChar {
 
 //TODO(teddy) Return the font-face loaded
 //Reuse the font-face incase the ui will require different font sizes
-pub unsafe fn load_fonts() -> Result<HashMap<char, FontChar>, FontError> {
+
+//Note(teddy) Caller can generate fonts for different sizes depending on their needs
+//The unnecessary fonts should be freed accordingly
+pub unsafe fn load_fonts(font_size: u8) -> Result<FontFace, FontError> {
     let mut ft_lib: freetype::FT_Library = std::ptr::null_mut();
     if freetype::FT_Init_FreeType(&mut ft_lib) != 0 {
         return Err(FontError::FailedToLoadFontLib);
@@ -435,7 +445,7 @@ pub unsafe fn load_fonts() -> Result<HashMap<char, FontChar>, FontError> {
         return Err(FontError::UnableToLoadFont);
     }
 
-    freetype::FT_Set_Pixel_Sizes(font_face, 0, 24);
+    freetype::FT_Set_Pixel_Sizes(font_face, 0, font_size as u32);
 
     let mut characters = HashMap::new();
 
@@ -485,5 +495,10 @@ pub unsafe fn load_fonts() -> Result<HashMap<char, FontChar>, FontError> {
     freetype::FT_Done_Face(font_face);
     freetype::FT_Done_FreeType(ft_lib);
 
-    Ok(characters)
+
+    Ok(FontFace {
+        font_name: String::from(""),
+        font_size,
+        chars: characters
+    })
 }

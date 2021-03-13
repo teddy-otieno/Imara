@@ -1,4 +1,4 @@
-use crate::core::Engine;
+use crate::core::{Engine, FontFace};
 use crate::renderer::draw::draw_text;
 use std::ptr::null;
 use std::ffi::c_void;
@@ -10,11 +10,15 @@ use crate::game_world::world::{AssetSource};
 use crate::utils::Cords;
 
 static mut SHADER_TEXT_ID: u32 = 0;
+static mut ENGINE_PTR: *const Engine = null();
 
 pub trait View {
-    fn update(&self, engine: &Engine) -> UIResult;
-    fn calculate_intersect_with_cursor(&self, cords: &Cords<f32>);
-    fn receive_cursor_cords(&mut self, cords: Cords<f32>);
+    fn update(&mut self, engine: &Engine) -> UIResult;
+    fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>);
+
+    fn receive_cursor_cords(&mut self, engine: &mut Engine, cords: Cords<f32>) {
+        self.compute_intersect_with_cursor_cords(&engine, &cords);
+    }
 }
 
 #[derive(Debug)]
@@ -31,20 +35,28 @@ pub struct TextView {
     text_vao: i32,
     text_vbo: i32,
     text_shader_id: u32,
+    text_length: u32,
+    text_height: u32,
+    cursor_hover: bool,
     pub text: String,
-    pub position: Cords<f32>,
-    pub size: Option<Size>, //Note(teddy) Incase the size is not passed, use the fonts width and heights and update this value
+    pub position: Cords<u32>,
+    pub size: Option<Size>,
+    pub color: Option<Vector3<f32>>,
+    //Note(teddy) Incase the size is not passed, use the fonts width and heights and update this value
     pub scale: f32,
 
-    pub on_hover: Option<Box<dyn FnMut()>>
+    pub on_hover: Option<Box<dyn FnMut(*mut TextView)>>,
 }
 
 pub type UIResult = Result<(), UIError>;
 
 impl TextView {
-    pub fn new(text: String, position: Cords<f32>, scale: f32, size: Option<Size>) -> Self {
+    pub fn new(text: String, position: Cords<u32>, scale: f32, size: Option<Size>) -> Self {
         let mut vbo: u32 = 0;
         let mut vao: u32 = 0;
+
+        let engine = unsafe { ENGINE_PTR.as_ref().unwrap() };
+        let length_of_text = get_the_length_of_text(&text, &engine.font_face);
 
         unsafe {
             gl::GenVertexArrays(1, &mut vao);
@@ -74,18 +86,35 @@ impl TextView {
                 text,
                 position,
                 scale,
+                size,
+                text_height: engine.font_face.font_size as u32,
+                text_length: length_of_text,
                 text_vao: vao as i32,
                 text_vbo: vbo as i32,
+                cursor_hover: false,
                 text_shader_id: SHADER_TEXT_ID as u32,
                 on_hover: None,
-                size
+                color: None
             }
         }
     }
 }
 
+
 impl View for TextView {
-    fn update(&self, engine: &Engine) -> UIResult {
+    fn update(&mut self, engine: &Engine) -> UIResult {
+
+        let view: *mut TextView = self;
+        if self.cursor_hover && self.on_hover.is_some() {
+            self.on_hover.as_mut().unwrap()(view);
+        }
+
+        let default_text_color: Vector3<f32> = Vector3::new(1.0, 1.0, 1.0);
+        let color = match &self.color {
+            Some(color) => color,
+            None => &default_text_color,
+        };
+
         unsafe {
             draw_text(
                 self.text_vao as u32,
@@ -93,24 +122,49 @@ impl View for TextView {
                 &engine,
                 self.text_shader_id,
                 self.text.as_str(),
-                self.position.x, self.position.y,
+                self.position.x as f32, self.position.y as f32,
                 0.5,
-                Vector3::new(1.0, 1.0, 1.0),
+                color
             );
         }
 
         Ok(())
     }
 
-    fn calculate_intersect_with_cursor(&self, cords: &Cords<f32>) { }
+    fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>) {
+        let min_x = self.position.x;
+        let min_y = self.position.y;
 
-    fn receive_cursor_cords(&mut self, cords: Cords<f32>) {
+        //FIXME(teddy): The length doesn't seem to match the actual screen length
+        let max_x = min_x + self.text_length;
+        let max_y = min_y + self.text_height;
 
-        self.calculate_intersect_with_cursor(&cords);
+        if (cords.x > min_x as f32 && cords.x < max_x as f32) && (cords.y > min_y as f32 && cords.y < max_y as f32) {
+            self.cursor_hover = true;
+        } else {
 
-        //Normalize the cords
-        println!("Cords received: {} {}", cords.x, cords.y);
+            //TODO(teddy) Add on mouse leave event
+            self.color = Some(Vector3::new(1.0, 1.0, 1.0));
+            self.cursor_hover = false;
+        }
+
     }
+
+    fn receive_cursor_cords(&mut self, engine: &mut Engine, cords: Cords<f32>) {
+        self.compute_intersect_with_cursor_cords(&engine, &cords);
+    }
+}
+
+
+fn get_the_length_of_text(text: &String, font_face: &FontFace) -> u32 {
+    let mut length = 0;
+    for c in text.chars() {
+        let font_char = &font_face.chars[&c];
+
+        length += font_char.size.x as u32;
+    }
+
+    length
 }
 
 pub fn add_ui_element(engine: &mut Engine, view: Box<dyn View>) {
@@ -123,7 +177,10 @@ pub fn add_ui_element(engine: &mut Engine, view: Box<dyn View>) {
 pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
     let mut fbo: u32 = 0;
 
+
     unsafe {
+        ENGINE_PTR = engine;
+
         gl::GenFramebuffers(1, &mut fbo);
     }
 
@@ -143,8 +200,10 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
     Ok(())
 }
 
-pub fn propagate_cursor_pos_to_ui(engine: &mut Engine, cords: Cords<f32>) {
-    for view in &mut engine.ui_view {
-        view.receive_cursor_cords(cords);
+pub fn propagate_cursor_pos_to_ui(engine: *mut Engine, cords: Cords<f32>) {
+    unsafe {
+        for view in (&mut *engine).ui_view.iter_mut() {
+            view.receive_cursor_cords(&mut *engine, cords);
+        }
     }
 }

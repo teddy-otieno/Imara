@@ -19,6 +19,7 @@ mod ui;
 
 use std::time::Instant;
 
+use nalgebra::Vector3;
 use glfw::Context;
 
 use crate::core::{camera_behaviour, load_fonts, Engine, EventManager};
@@ -38,7 +39,7 @@ fn main() {
 }
 
 fn run(display: Display) {
-    let fonts = unsafe { load_fonts() }.expect("Failed to load messages");
+    let fonts = unsafe { load_fonts(32) }.expect("Failed to load messages");
 
     let mut engine = Engine::new(display, fonts);
     let mut event_manager = EventManager::new();
@@ -146,9 +147,23 @@ fn run(display: Display) {
 
     init_ui(&mut engine, &mut world);
 
-    let text_view = Box::new(TextView::new(String::from("Hello world"), Cords { x: 10.0, y: 10.0 }, 1.0, None));
-    let text_view_1 = Box::new(TextView::new(String::from("Another hellow rodl"), Cords { x: 100.0, y: 100.0 }, 1.0, None));
-    let text_view_2 = Box::new(TextView::new(String::from("This ui is working okay"), Cords { x: 200.0, y: 200.0 }, 1.0, None));
+    let mut text_view = Box::new(TextView::new(String::from("Hello world"), Cords { x: 10, y: 10 }, 1.0, None));
+    let mut text_view_1 = Box::new(TextView::new(String::from("Hello world"), Cords { x: 100, y: 100 }, 1.0, None));
+    let mut text_view_2 = Box::new(TextView::new(String::from("Hello world"), Cords { x: 200, y: 200 }, 1.0, None));
+
+    text_view.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
+        let view_ref = view.as_mut().unwrap();
+        view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
+    }));
+    text_view_1.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
+        let view_ref = view.as_mut().unwrap();
+        view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
+    }));
+
+    text_view_2.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
+        let view_ref = view.as_mut().unwrap();
+        view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
+    }));
     add_ui_element(&mut engine, text_view);
     add_ui_element(&mut engine, text_view_1);
     add_ui_element(&mut engine, text_view_2);

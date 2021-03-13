@@ -281,7 +281,7 @@ pub unsafe fn draw_text(
     mut x: f32,
     mut y: f32,
     scale: f32,
-    color: Vector3<f32>,
+    color: &Vector3<f32>,
 ) {
     gl::Enable(gl::BLEND);
     gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
@@ -315,7 +315,7 @@ pub unsafe fn draw_text(
     gl::BindVertexArray(text_vao);
 
     for c in text.chars() {
-        let character = &engine.characters[&c];
+        let character = &engine.font_face.chars[&c];
         let xposition = x + character.bearing.x as f32 * scale;
         let yposition = y - (character.size.y - character.bearing.y) as f32 * scale;
 

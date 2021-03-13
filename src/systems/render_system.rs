@@ -139,14 +139,16 @@ impl System for Renderer {
         //TODO(teddy) Split this ui updates to a seperate thread
 
         unsafe {
-            draw_ui(&engine);
+            draw_ui(engine);
         }
     }
 }
 
-unsafe fn draw_ui(engine: &Engine) {
-    for view in engine.ui_view.iter() {
-        view.update(engine).unwrap();
+unsafe fn draw_ui(engine: *mut Engine) {
+
+    let eng = engine.as_mut().unwrap();
+    for view in eng.ui_view.iter_mut() {
+        view.update(engine.as_mut().unwrap()).unwrap();
     }
 
 }

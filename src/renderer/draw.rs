@@ -288,9 +288,9 @@ pub unsafe fn draw_text(
 
     gl::UseProgram(shader_id);
 
-    //NOTE(teddy) Flip the y axis
-    //TODO(teddy): Use the font-char's height to calculate the reverse cords
-    y = engine.camera.view_port.1 as f32 - (y + 10.0);
+    //Note(teddy) Since opengl's origin cords are at the bottom. We decrement the y with font_size
+    //to accurately map the font cords to the screen
+    y = engine.camera.view_port.1 as f32 - y - engine.font_face.font_size as f32;
     let (width, height) = engine.camera.view_port;
 
     let projection: Matrix4<f32> = Matrix4::new_orthographic(0.0, width as f32, 0.0, height as f32, -1.0, 1.0);

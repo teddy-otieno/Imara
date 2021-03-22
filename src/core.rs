@@ -406,6 +406,7 @@ pub fn camera_behaviour(engine: &mut Engine) {
     }
 }
 
+#[derive(Debug)]
 pub struct FontFace {
     font_name: String, //TODO(teddy) Get the name of the font from the ttf files
     pub font_size: u8,    //Similar to the font-size
@@ -419,6 +420,7 @@ pub enum FontError {
     FailedToLoadGlyph,
 }
 
+#[derive(Debug)]
 pub struct FontChar {
     pub texture: u32,
     pub size: Point2<i32>,

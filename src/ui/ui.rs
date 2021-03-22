@@ -123,7 +123,7 @@ impl View for TextView {
                 self.text_shader_id,
                 self.text.as_str(),
                 self.position.x as f32, self.position.y as f32,
-                0.5,
+                1.0,
                 color
             );
         }
@@ -161,7 +161,7 @@ fn get_the_length_of_text(text: &String, font_face: &FontFace) -> u32 {
     for c in text.chars() {
         let font_char = &font_face.chars[&c];
 
-        length += font_char.size.x as u32;
+        length += (font_char.advance >> 6) as u32;
     }
 
     length

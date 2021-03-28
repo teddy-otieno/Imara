@@ -10,7 +10,7 @@ use ncollide3d::query::Ray;
 use crate::game_world::components::HighlightComponent;
 use crate::game_world::world::{EntityID, World, FONT_ASSETS_DIR};
 use crate::gl_bindings::Display;
-use crate::ui::ui::{View, propagate_cursor_pos_to_ui};
+use crate::ui::ui::{propagate_cursor_pos_to_ui, UITree, View};
 use crate::utils::Cords;
 
 #[derive(Debug)]
@@ -51,6 +51,7 @@ pub struct Engine {
     cursor_mode_toggle: bool,
 
     pub ui_view: Vec<Box<dyn View>>,
+    pub ui_tree: UITree,
     pub ui_frame_buffer: Option<u32>,
 }
 
@@ -71,6 +72,7 @@ impl Engine {
             font_face,
             ui_view: vec![],
             ui_frame_buffer: None,
+            ui_tree: UITree::new(),
         }
     }
 
@@ -89,7 +91,10 @@ impl Engine {
                         self.camera.update_look(*x, *y);
                     }
 
-                    let cords = Cords { x: *x as f32, y: *y as f32 };
+                    let cords = Cords {
+                        x: *x as f32,
+                        y: *y as f32,
+                    };
 
                     self.camera.new_cords = cords;
                     propagate_cursor_pos_to_ui(self, cords)
@@ -409,8 +414,8 @@ pub fn camera_behaviour(engine: &mut Engine) {
 #[derive(Debug)]
 pub struct FontFace {
     font_name: String, //TODO(teddy) Get the name of the font from the ttf files
-    pub font_size: u8,    //Similar to the font-size
-    pub chars: HashMap<char, FontChar>
+    pub font_size: u8, //Similar to the font-size
+    pub chars: HashMap<char, FontChar>,
 }
 
 #[derive(Debug)]
@@ -427,7 +432,6 @@ pub struct FontChar {
     pub bearing: Point2<i32>,
     pub advance: i32,
 }
-
 
 //TODO(teddy) Return the font-face loaded
 //Reuse the font-face incase the ui will require different font sizes
@@ -497,10 +501,9 @@ pub unsafe fn load_fonts(font_size: u8) -> Result<FontFace, FontError> {
     freetype::FT_Done_Face(font_face);
     freetype::FT_Done_FreeType(ft_lib);
 
-
     Ok(FontFace {
         font_name: String::from(""),
         font_size,
-        chars: characters
+        chars: characters,
     })
 }

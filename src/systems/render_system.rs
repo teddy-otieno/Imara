@@ -1,12 +1,12 @@
-use std::{collections::HashMap};
-use std::ptr::null;
+use std::collections::HashMap;
 use std::ffi::c_void;
+use std::ptr::null;
 
-use nalgebra::{Vector3};
 use super::system::System;
 use crate::core::{Engine, Event, EventManager};
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::renderer::draw::*;
+use nalgebra::Vector3;
 
 pub struct Renderer {
     normal_objects: HashMap<EntityID, RenderObject>,
@@ -133,7 +133,6 @@ impl System for Renderer {
                     };
                 }
             }
-
         }
 
         //TODO(teddy) Split this ui updates to a seperate thread
@@ -145,10 +144,12 @@ impl System for Renderer {
 }
 
 unsafe fn draw_ui(engine: *mut Engine) {
-
     let eng = engine.as_mut().unwrap();
-    for view in eng.ui_view.iter_mut() {
-        view.update(engine.as_mut().unwrap()).unwrap();
-    }
+    // for view in eng.ui_view.iter_mut() {
+    //     view.update(engine.as_mut().unwrap()).unwrap();
+    // }
 
+    if let Some(view) = &mut eng.ui_tree.root {
+        view.update(engine.as_ref().unwrap());
+    }
 }

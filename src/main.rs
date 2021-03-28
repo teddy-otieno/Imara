@@ -14,24 +14,25 @@ mod gl_bindings;
 mod obj_parser;
 mod renderer;
 mod systems;
-mod utils;
 mod ui;
+mod utils;
 
 use std::time::Instant;
 
-use nalgebra::Vector3;
 use glfw::Context;
+use nalgebra::Vector3;
 
 use crate::core::{camera_behaviour, load_fonts, Engine, EventManager};
+use crate::ui::ui::View;
+use crate::utils::Cords;
 use editor::editor::{update_editor, Editor};
-use game_world::world::{AssetSource};
+use game_world::world::AssetSource;
 use game_world::world::World;
 use gl_bindings::Display;
 use systems::physics::Physics;
 use systems::render_system::Renderer;
 use systems::system::{System, Systems};
-use ui::ui::{init_ui, add_ui_element, TextView};
-use crate::utils::Cords;
+use ui::ui::{init_ui, SimpleUIContainer, TextView, ViewDimens, ViewPosition};
 
 fn main() {
     let display = gl_bindings::init_gl_window_context((1000, 600), "Imara");
@@ -39,7 +40,7 @@ fn main() {
 }
 
 fn run(display: Display) {
-    let fonts = unsafe { load_fonts(32) }.expect("Failed to load messages");
+    let fonts = unsafe { load_fonts(12) }.expect("Failed to load messages");
 
     let mut engine = Engine::new(display, fonts);
     let mut event_manager = EventManager::new();
@@ -48,125 +49,64 @@ fn run(display: Display) {
     let mut systems = Systems::new();
     let mut editor = Editor::new();
 
-
-    // if let Err(_err) = load_level("level1", &mut world) {
-    //     //Will do something
-    //     println!("Level not found");
-    // }
-
-
-    /*
-    {
-        let id = world.create_entity();
-        let mesh_id = world.resources.add_resource(AssetSource::Mesh((
-            ObjType::Normal,
-            String::from("landscape.obj"),
-        )));
-
-        //TODO(teddy) add a push method
-        world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
-        world.components.positionable[id] =
-            Some(TransformComponent::new(Vector3::new(0.0, -5.0, 0.0), 1.0));
-
-        world.components.physics[id] = Some(PhysicsComponent::new(
-            0.0,
-            false,
-            BodyStatus::Static,
-            Vector3::zeros(),
-            MaterialHandle::new(BasicMaterial::new(1.0, 0.8)),
-        ));
-    }
-
-    {
-        let id = world.create_entity();
-        let mesh_id = world.resources.add_resource(AssetSource::Mesh((
-            ObjType::Normal,
-            String::from("sphere.obj"),
-        )));
-
-        //TODO(teddy) add a push method
-        world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
-        world.components.positionable[id] = Some(TransformComponent::new(
-            Vector3::new(100.0, 400.0, 0.0),
-            1.0,
-        ));
-
-        world.components.physics[id] = Some(PhysicsComponent::new(
-            1.0,
-            false,
-            BodyStatus::Dynamic,
-            Vector3::zeros(),
-            MaterialHandle::new(BasicMaterial::new(0.8, 0.8)),
-        ));
-    }
-
-    {
-        let id = world.create_entity();
-        let mesh_id = world.resources.add_resource(AssetSource::Mesh((
-            ObjType::Normal,
-            String::from("cube.obj"),
-        )));
-
-        //TODO(teddy) add a push method
-        world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
-        world.components.positionable[id] =
-            Some(TransformComponent::new(Vector3::new(0.0, 400.0, 20.0), 1.0));
-
-        world.components.physics[id] = Some(PhysicsComponent::new(
-            10.4,
-            false,
-            BodyStatus::Dynamic,
-            Vector3::zeros(),
-            MaterialHandle::new(BasicMaterial::new(0.8, 0.8)),
-        ));
-    }
-
-    {
-        let id = world.create_entity();
-        let mesh_id = world.resources.add_resource(AssetSource::Mesh((
-            ObjType::Normal,
-            String::from("suzanne.obj"),
-        )));
-
-        //TODO(teddy) add a push method
-        world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
-        world.components.positionable[id] = Some(TransformComponent::new(
-            Vector3::new(5.0, 400.0, -10.0),
-            1.0,
-        ));
-        world.components.physics[id] = Some(PhysicsComponent::new(
-            8.0,
-            false,
-            BodyStatus::Dynamic,
-            Vector3::zeros(),
-            MaterialHandle::new(BasicMaterial::new(1.0, 0.8)),
-        ));
-    }
-
-    */
-
     init_ui(&mut engine, &mut world);
 
-    let mut text_view = Box::new(TextView::new(String::from("Hello world"), Cords { x: 10, y: 10 }, 1.0, None));
-    let mut text_view_1 = Box::new(TextView::new(String::from("Hello world"), Cords { x: 100, y: 100 }, 1.0, None));
-    let mut text_view_2 = Box::new(TextView::new(String::from("Hello world"), Cords { x: 200, y: 200 }, 1.0, None));
+    let mut text_view = Box::new(TextView::new(
+        String::from("Hello world"),
+        ViewPosition { x: 10, y: 10 },
+        1.0,
+    ));
+    let mut text_view_1 = Box::new(TextView::new(
+        String::from("Hello world"),
+        ViewPosition { x: 100, y: 100 },
+        1.0,
+    ));
+    let mut text_view_2 = Box::new(TextView::new(
+        String::from("Hello world"),
+        ViewPosition { x: 200, y: 200 },
+        1.0,
+    ));
 
     text_view.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
         view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
     }));
+    text_view.on_mouse_leave = Some(Box::new(|view: *mut TextView| unsafe {
+        let view_ref = view.as_mut().unwrap();
+        view_ref.color = Some(Vector3::new(1.0, 1.0, 1.0));
+    }));
+
     text_view_1.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
         view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
+    }));
+
+    text_view_1.on_mouse_leave = Some(Box::new(|view: *mut TextView| unsafe {
+        let view_ref = view.as_mut().unwrap();
+        view_ref.color = Some(Vector3::new(1.0, 1.0, 1.0));
     }));
 
     text_view_2.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
         view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
     }));
-    add_ui_element(&mut engine, text_view);
-    add_ui_element(&mut engine, text_view_1);
-    add_ui_element(&mut engine, text_view_2);
+    text_view_2.on_mouse_leave = Some(Box::new(|view: *mut TextView| unsafe {
+        let view_ref = view.as_mut().unwrap();
+        view_ref.color = Some(Vector3::new(1.0, 1.0, 1.0));
+    }));
+
+    let simple_container_view_dimensions = Some(ViewDimens::new(1000, 600));
+    let mut simple_container = Box::new(SimpleUIContainer::new(simple_container_view_dimensions));
+
+    simple_container.add_child(text_view);
+    simple_container.add_child(text_view_1);
+    simple_container.add_child(text_view_2);
+
+    engine.ui_tree.root = Some(simple_container);
+    // add_ui_element(&mut engine, text_view);
+    // add_ui_element(&mut engine, text_view_1);
+    // add_ui_element(&mut engine, text_view_2);
+
     let render_system: Box<dyn System> = Box::new(Renderer::new());
     let physics_system: Box<dyn System> = Box::new(Physics::new());
 
@@ -204,3 +144,100 @@ fn run(display: Display) {
         }
     }
 }
+
+//TODO(teddy) Get rid of this junk code later
+
+// if let Err(_err) = load_level("level1", &mut world) {
+//     //Will do something
+//     println!("Level not found");
+// }
+
+/*
+{
+    let id = world.create_entity();
+    let mesh_id = world.resources.add_resource(AssetSource::Mesh((
+        ObjType::Normal,
+        String::from("landscape.obj"),
+    )));
+
+    //TODO(teddy) add a push method
+    world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
+    world.components.positionable[id] =
+        Some(TransformComponent::new(Vector3::new(0.0, -5.0, 0.0), 1.0));
+
+    world.components.physics[id] = Some(PhysicsComponent::new(
+        0.0,
+        false,
+        BodyStatus::Static,
+        Vector3::zeros(),
+        MaterialHandle::new(BasicMaterial::new(1.0, 0.8)),
+    ));
+}
+
+{
+    let id = world.create_entity();
+    let mesh_id = world.resources.add_resource(AssetSource::Mesh((
+        ObjType::Normal,
+        String::from("sphere.obj"),
+    )));
+
+    //TODO(teddy) add a push method
+    world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
+    world.components.positionable[id] = Some(TransformComponent::new(
+        Vector3::new(100.0, 400.0, 0.0),
+        1.0,
+    ));
+
+    world.components.physics[id] = Some(PhysicsComponent::new(
+        1.0,
+        false,
+        BodyStatus::Dynamic,
+        Vector3::zeros(),
+        MaterialHandle::new(BasicMaterial::new(0.8, 0.8)),
+    ));
+}
+
+{
+    let id = world.create_entity();
+    let mesh_id = world.resources.add_resource(AssetSource::Mesh((
+        ObjType::Normal,
+        String::from("cube.obj"),
+    )));
+
+    //TODO(teddy) add a push method
+    world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
+    world.components.positionable[id] =
+        Some(TransformComponent::new(Vector3::new(0.0, 400.0, 20.0), 1.0));
+
+    world.components.physics[id] = Some(PhysicsComponent::new(
+        10.4,
+        false,
+        BodyStatus::Dynamic,
+        Vector3::zeros(),
+        MaterialHandle::new(BasicMaterial::new(0.8, 0.8)),
+    ));
+}
+
+{
+    let id = world.create_entity();
+    let mesh_id = world.resources.add_resource(AssetSource::Mesh((
+        ObjType::Normal,
+        String::from("suzanne.obj"),
+    )));
+
+    //TODO(teddy) add a push method
+    world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
+    world.components.positionable[id] = Some(TransformComponent::new(
+        Vector3::new(5.0, 400.0, -10.0),
+        1.0,
+    ));
+    world.components.physics[id] = Some(PhysicsComponent::new(
+        8.0,
+        false,
+        BodyStatus::Dynamic,
+        Vector3::zeros(),
+        MaterialHandle::new(BasicMaterial::new(1.0, 0.8)),
+    ));
+}
+
+*/

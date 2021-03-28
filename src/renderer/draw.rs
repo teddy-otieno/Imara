@@ -4,7 +4,7 @@ use std::ffi::CString;
 
 use nalgebra::{Matrix, Matrix4, Point3, Point4, Vector3};
 
-use crate::core::{Camera, Light, Engine};
+use crate::core::{Camera, Engine, Light};
 use crate::game_world::components::{HighlightComponent, TransformComponent};
 use crate::game_world::world::World;
 use crate::obj_parser::{NormalObj, TexturedObj};
@@ -293,11 +293,12 @@ pub unsafe fn draw_text(
     y = engine.camera.view_port.1 as f32 - y - engine.font_face.font_size as f32;
     let (width, height) = engine.camera.view_port;
 
-    let projection: Matrix4<f32> = Matrix4::new_orthographic(0.0, width as f32, 0.0, height as f32, -1.0, 1.0);
+    let projection: Matrix4<f32> =
+        Matrix4::new_orthographic(0.0, width as f32, 0.0, height as f32, -1.0, 1.0);
 
     //dbg!(projection);
     let projection_uniform_name = CString::new("projection").unwrap();
-    let text_color_name =  CString::new("text_color").unwrap();
+    let text_color_name = CString::new("text_color").unwrap();
 
     let projection_uniform_location =
         gl::GetUniformLocation(shader_id, projection_uniform_name.as_ptr());
@@ -323,23 +324,23 @@ pub unsafe fn draw_text(
         let h: f32 = character.size.y as f32 * scale;
 
         let vertices: [[f32; 4]; 6] = [
-            [xposition      , yposition + h     , 0.0, 0.0],
-            [xposition      , yposition         , 0.0, 1.0],
-            [xposition + w  , yposition         , 1.0, 1.0],
-
-            [xposition      , yposition + h     , 0.0, 0.0],
-            [xposition + w  , yposition         , 1.0, 1.0],
-            [xposition + w  , yposition + h     , 1.0, 0.0]
+            [xposition, yposition + h, 0.0, 0.0],
+            [xposition, yposition, 0.0, 1.0],
+            [xposition + w, yposition, 1.0, 1.0],
+            [xposition, yposition + h, 0.0, 0.0],
+            [xposition + w, yposition, 1.0, 1.0],
+            [xposition + w, yposition + h, 1.0, 0.0],
         ];
 
         gl::BindTexture(gl::TEXTURE_2D, character.texture);
 
         gl::BindBuffer(gl::ARRAY_BUFFER, text_vbo);
         gl::BufferSubData(
-            gl::ARRAY_BUFFER, 
-            0, 
-            (vertices.len() * 4 * std::mem::size_of::<f32>())as isize, 
-            vertices.as_ptr() as *const c_void);
+            gl::ARRAY_BUFFER,
+            0,
+            (vertices.len() * 4 * std::mem::size_of::<f32>()) as isize,
+            vertices.as_ptr() as *const c_void,
+        );
 
         gl::BindBuffer(gl::ARRAY_BUFFER, 0);
         gl::DrawArrays(gl::TRIANGLES, 0, 6);

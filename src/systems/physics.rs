@@ -160,7 +160,7 @@ impl Physics {
                                     Some(handle) if handle == id => {
                                         if intersection.toi < min {
                                             ray_casted_event.entity = Some(entity_id);
-                                             min = intersection.toi;
+                                            min = intersection.toi;
                                         }
                                     }
 

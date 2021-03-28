@@ -9,6 +9,8 @@ pub fn get_at_index<T>(list: &LinkedList<T>, index: usize) -> Option<&T> {
     None
 }
 
-
 #[derive(Copy, Clone)]
-pub struct Cords<T> { pub(crate) x: T, pub(crate) y: T }
+pub struct Cords<T> {
+    pub(crate) x: T,
+    pub(crate) y: T,
+}

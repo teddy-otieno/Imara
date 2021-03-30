@@ -237,7 +237,8 @@ impl Camera {
             camera_front: Vector3::new(0.0, 0.0, -1.0),
             camera_up: Vector3::new(0.0, 1.0, 0.0),
             first_move: true,
-            fov: 0.785398,
+            // fov: 0.785398 std::f64::consts::FRAC_PI_4,
+            fov: std::f32::consts::FRAC_PI_4,
             yaw: -90.0,
             pitch: 0.0,
             previous_cords: (0.0, 0.0),
@@ -333,6 +334,8 @@ fn compute_ray_from_mouse_cords(
     let y = 1.0 - (2.0 * cords.1) / screen_cords.1 as f32;
 
     let ray_normalized_devices_cords: Vector4<f32> = Vector4::new(x, y, 1.0, 1.0);
+
+    //FIXME(teddy) Inverse computation should be handled incase it fails
     let map_to_camera_space: Matrix4<f32> =
         (projection_matrix * view_matrix).try_inverse().unwrap();
 

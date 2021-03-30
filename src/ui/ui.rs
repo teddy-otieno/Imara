@@ -1,9 +1,7 @@
 use crate::core::{Engine, FontFace};
-use crate::renderer::draw::draw_text;
+use crate::renderer::draw::{draw_quad_with_default_shader, draw_text};
 use nalgebra::Vector3;
-use nphysics3d::utils::union_find::union;
 use std::ffi::c_void;
-use std::marker::PhantomData;
 use std::ptr::null;
 
 use crate::game_world::world::AssetSource;
@@ -11,6 +9,7 @@ use crate::game_world::world::World;
 use crate::utils::Cords;
 
 static mut SHADER_TEXT_ID: u32 = 0;
+pub static mut UI_QUAD_SHADER_ID: u32 = 0;
 static mut ENGINE_PTR: *const Engine = null();
 
 #[derive(Copy, Clone, Debug)]
@@ -25,23 +24,40 @@ impl<T> Dimensions<T> {
     }
 }
 
+impl Dimensions<u32> {
+    pub fn zerod() -> Self {
+        Self { x: 0, y: 0 }
+    }
+}
+
 pub type ViewDimens = Dimensions<u32>;
 pub type ViewPosition = Dimensions<u32>;
 
 pub trait View {
+    fn get_id(&self) -> &str;
     fn update(&mut self, engine: &Engine) -> UIResult;
     fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>);
 
     fn receive_cursor_cords(&mut self, engine: &mut Engine, cords: Cords<f32>) {
         self.compute_intersect_with_cursor_cords(&engine, &cords);
     }
-    fn add_child(&mut self, child: Box<dyn View>) {} //Note(teddy) Only used by container views
-    fn update_dimensions(&mut self, dimensions: ViewDimens) {}
+    fn update_dimensions(&mut self, _dimensions: ViewDimens) {}
     fn get_view_dimensions(&self) -> Option<ViewDimens> {
         None
     }
-    fn set_position(&mut self, position: ViewPosition) {}
+    fn set_position(&mut self, _position: ViewPosition) {}
     fn get_position(&self) -> Option<ViewPosition>;
+}
+
+///Note(teddy) Container specific methods.
+///Container is also a view so each container
+///must implement the View Trait
+pub trait ViewContainer: View {
+    fn add_child(&mut self, _child: Box<dyn View>); //Note(teddy) Only used by container views
+    fn remove_child(&mut self, child_id: &str) -> UIResult; //Note(teddy) keep the ids immutable
+
+    ///Note(teddy) Iterate throught the entire container children to find the view id
+    fn get_view_by_id(&self, child_id: &str) -> Result<&Box<dyn View>, UIError>;
 }
 
 pub struct UITree {
@@ -57,11 +73,15 @@ impl UITree {
 #[derive(Debug)]
 pub enum UIError {
     UnableToInitializeFramebuffer,
+    ViewNotFound,
 }
 
 pub struct TextView {
+    id: Box<str>,
     text_vao: i32,
     text_vbo: i32,
+    background_vao: i32,
+    background_vbo: i32,
     text_shader_id: u32,
     text_length: u32,
     text_height: u32,
@@ -79,8 +99,41 @@ pub struct TextView {
 
 pub type UIResult = Result<(), UIError>;
 
+#[inline]
+unsafe fn initialize_background_buffers() -> (i32, i32) {
+    let mut vao: u32 = 0;
+    let mut vbo: u32 = 0;
+
+    gl::GenVertexArrays(1, &mut vao);
+    gl::GenBuffers(1, &mut vbo);
+
+    gl::BindVertexArray(vao);
+    gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+    gl::BufferData(
+        gl::ARRAY_BUFFER,
+        (6 * 2 * std::mem::size_of::<f32>()) as isize,
+        null(),
+        gl::DYNAMIC_DRAW,
+    );
+
+    gl::EnableVertexAttribArray(0);
+    gl::VertexAttribPointer(
+        0,
+        2, //Using vec2 when drawing quads inside the shader
+        gl::FLOAT,
+        gl::FALSE,
+        (2 * std::mem::size_of::<f32>()) as i32,
+        0 as *const c_void,
+    );
+
+    gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+    gl::BindVertexArray(0);
+
+    (vao as i32, vbo as i32)
+}
+
 impl TextView {
-    pub fn new(text: String, position: ViewPosition, scale: f32) -> Self {
+    pub fn new(id: Box<str>, text: String, position: ViewPosition, scale: f32) -> Self {
         let mut vbo: u32 = 0;
         let mut vao: u32 = 0;
 
@@ -117,7 +170,10 @@ impl TextView {
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
             gl::BindVertexArray(0);
 
+            let (background_vao, background_vbo) = initialize_background_buffers();
+
             Self {
+                id,
                 text,
                 position,
                 scale,
@@ -126,8 +182,10 @@ impl TextView {
                 text_length: length_of_text,
                 text_vao: vao as i32,
                 text_vbo: vbo as i32,
+                background_vao,
+                background_vbo,
                 cursor_hover: false,
-                text_shader_id: SHADER_TEXT_ID as u32,
+                text_shader_id: SHADER_TEXT_ID,
                 on_hover: None,
                 on_mouse_leave: None,
                 color: None,
@@ -137,6 +195,10 @@ impl TextView {
 }
 
 impl View for TextView {
+    fn get_id(&self) -> &str {
+        &(*self.id)
+    }
+
     fn update(&mut self, engine: &Engine) -> UIResult {
         let view: *mut TextView = self;
         if self.cursor_hover && self.on_hover.is_some() {
@@ -154,6 +216,18 @@ impl View for TextView {
         };
 
         unsafe {
+            let size = self.size.unwrap();
+            draw_quad_with_default_shader(
+                engine,
+                self.background_vao as u32,
+                self.background_vbo as u32,
+                (
+                    self.position.x as f32,
+                    (self.position.y + engine.font_face.font_size as u32) as f32,
+                ),
+                (size.y as f32, size.x as f32),
+                &[0.2, 0.2, 0.2],
+            );
             draw_text(
                 self.text_vao as u32,
                 self.text_vbo as u32,
@@ -170,7 +244,7 @@ impl View for TextView {
         Ok(())
     }
 
-    fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>) {
+    fn compute_intersect_with_cursor_cords(&mut self, _engine: &Engine, cords: &Cords<f32>) {
         let min_x = self.position.x;
         let min_y = self.position.y;
 
@@ -238,8 +312,16 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
         None,
     ));
 
-    unsafe { SHADER_TEXT_ID = shader_id as u32 };
+    let quad_shader = world.resources.add_resource(AssetSource::Shader(
+        String::from("ui_quad_vert.glsl"),
+        String::from("ui_quad_frag.glsl"),
+        None,
+    ));
 
+    unsafe {
+        SHADER_TEXT_ID = shader_id as u32;
+        UI_QUAD_SHADER_ID = quad_shader as u32;
+    };
     Ok(())
 }
 
@@ -257,32 +339,84 @@ pub fn propagate_cursor_pos_to_ui(engine: *mut Engine, cords: Cords<f32>) {
     }
 }
 
+pub enum Orientation {
+    Vertical,
+    Horizontal,
+}
+
 pub struct SimpleUIContainer {
+    id: Box<str>,
     children: Vec<Box<dyn View>>,
     dimensions: Option<ViewDimens>,
+    position: Option<ViewPosition>,
+    orientation: Orientation,
 }
 
 impl SimpleUIContainer {
-    pub fn new(dimensions: Option<ViewDimens>) -> Self {
+    pub fn new(
+        id: Box<str>,
+        dimensions: Option<ViewDimens>,
+        position: Option<ViewPosition>,
+        orientation: Orientation,
+    ) -> Self {
         Self {
+            id,
             children: vec![],
             dimensions,
+            position,
+            orientation,
+        }
+    }
+
+    fn recalculate_dimensions(&self) {
+        let mut new_dimensions = ViewDimens::zerod();
+
+        //Note(teddy) Updating the length and height based on the orientation of the container
+        match self.orientation {
+            Orientation::Vertical => {
+                let mut height: u32 = 0;
+                let mut view_dimens = ViewDimens::zerod();
+
+                for child in self.children.iter() {
+                    view_dimens = child.get_view_dimensions().unwrap_or(ViewDimens::zerod());
+                    new_dimensions.x = std::cmp::max(view_dimens.x, new_dimensions.x);
+                    height += view_dimens.y;
+                }
+
+                new_dimensions.y = height;
+            }
+
+            Orientation::Horizontal => {
+                let mut width: u32 = 0;
+                let mut view_dimens = ViewDimens::zerod();
+
+                for child in self.children.iter() {
+                    view_dimens = child.get_view_dimensions().unwrap_or(ViewDimens::zerod());
+                    new_dimensions.y = std::cmp::max(view_dimens.y, new_dimensions.y);
+                    width += view_dimens.x;
+                }
+
+                new_dimensions.x = width;
+            }
         }
     }
 }
 
 impl View for SimpleUIContainer {
-    fn add_child(&mut self, child: Box<dyn View>) {
-        self.children.push(child);
+    fn get_id(&self) -> &str {
+        &(self.id)
     }
 
     fn update(&mut self, engine: &Engine) -> UIResult {
         //TODO(teddy) This initial position will be the position of the container
-        let mut initial_position = 0;
+        let mut initial_position = self.position.unwrap().y;
         for view in self.children.iter_mut() {
+            view.set_position(ViewPosition::new(
+                self.position.unwrap().x,
+                initial_position,
+            ));
             if let Some(view_dimens) = view.get_view_dimensions() {
-                view.set_position(ViewPosition::new(0, initial_position));
-                initial_position += view_dimens.y;
+                initial_position += view_dimens.y + 10;
             }
 
             view.update(engine).unwrap();
@@ -293,7 +427,7 @@ impl View for SimpleUIContainer {
         Ok(())
     }
 
-    fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>) {
+    fn compute_intersect_with_cursor_cords(&mut self, _engine: &Engine, cords: &Cords<f32>) {
         //TODO(teddy) implement a simple ui container
     }
 
@@ -301,11 +435,35 @@ impl View for SimpleUIContainer {
         self.compute_intersect_with_cursor_cords(&engine, &cords);
 
         for view in self.children.iter_mut() {
-            view.receive_cursor_cords(engine, cords)
+            view.receive_cursor_cords(engine, cords);
         }
     }
 
     fn get_position(&self) -> Option<ViewPosition> {
         None
+    }
+}
+
+impl ViewContainer for SimpleUIContainer {
+    fn add_child(&mut self, child: Box<dyn View>) {
+        self.children.push(child);
+        self.recalculate_dimensions();
+    }
+
+    fn get_view_by_id(&self, _child_id: &str) -> Result<&Box<dyn View>, UIError> {
+        unimplemented!();
+    }
+
+    fn remove_child(&mut self, child_id: &str) -> UIResult {
+        if let Some(index) = self
+            .children
+            .iter()
+            .position(|child| child.get_id() == child_id)
+        {
+            self.children.remove(index);
+            Ok(())
+        } else {
+            Err(UIError::ViewNotFound)
+        }
     }
 }

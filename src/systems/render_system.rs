@@ -1,12 +1,9 @@
 use std::collections::HashMap;
-use std::ffi::c_void;
-use std::ptr::null;
 
 use super::system::System;
 use crate::core::{Engine, Event, EventManager};
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::renderer::draw::*;
-use nalgebra::Vector3;
 
 pub struct Renderer {
     normal_objects: HashMap<EntityID, RenderObject>,
@@ -143,6 +140,7 @@ impl System for Renderer {
     }
 }
 
+//TODO(teddy) Draw on a seperate frame buffer
 unsafe fn draw_ui(engine: *mut Engine) {
     let eng = engine.as_mut().unwrap();
     // for view in eng.ui_view.iter_mut() {
@@ -150,6 +148,9 @@ unsafe fn draw_ui(engine: *mut Engine) {
     // }
 
     if let Some(view) = &mut eng.ui_tree.root {
-        view.update(engine.as_ref().unwrap());
+        match view.update(engine.as_ref().unwrap()) {
+            Ok(_) => (),
+            Err(_) => println!("A view failed to update"),
+        }
     }
 }

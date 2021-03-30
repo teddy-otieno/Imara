@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::ffi::c_void;
 use std::ffi::CString;
 
-use nalgebra::{Matrix, Matrix4, Point3, Point4, Vector3};
+use nalgebra::{Matrix4, Point3, Point4, Vector3};
 
 use crate::core::{Camera, Engine, Light};
 use crate::game_world::components::{HighlightComponent, TransformComponent};
@@ -350,4 +350,71 @@ pub unsafe fn draw_text(
 
     gl::BindVertexArray(0);
     gl::BindTexture(gl::TEXTURE_2D, 0);
+}
+
+//Note(teddy) Draw any quad
+pub unsafe fn draw_quad(quad_vao: u32, quad_vbo: u32, (x, y): (f32, f32), (h, w): (f32, f32)) {
+    let vertices: [[f32; 2]; 6] = [
+        [x, y + h],
+        [x, y],
+        [x + w, y],
+        [x, y + h],
+        [x + w, y],
+        [x + w, y + h],
+    ];
+
+    gl::BindVertexArray(quad_vao);
+    gl::BindBuffer(gl::ARRAY_BUFFER, quad_vbo);
+    gl::BufferSubData(
+        gl::ARRAY_BUFFER,
+        0,
+        (vertices.len() * 2 * std::mem::size_of::<f32>()) as isize,
+        vertices.as_ptr() as *const c_void,
+    );
+
+    //Note(teddy) Unbinding the quad_vbo
+    gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+    gl::DrawArrays(gl::TRIANGLES, 0, 6);
+
+    gl::BindVertexArray(0);
+}
+
+pub unsafe fn draw_quad_with_default_shader(
+    engine: &Engine,
+    quad_vao: u32,
+    quad_vbo: u32,
+    (x, y): (f32, f32),
+    (h, w): (f32, f32),
+    color: &[f32; 3],
+) {
+    use crate::ui::ui::UI_QUAD_SHADER_ID;
+
+    let program = UI_QUAD_SHADER_ID;
+    gl::UseProgram(program);
+
+    let (width, height) = engine.camera.view_port;
+
+    let projection: Matrix4<f32> =
+        Matrix4::new_orthographic(0.0, width as f32, 0.0, height as f32, -1.0, 1.0);
+    let color_uniform_name = CString::new("quad_color").unwrap();
+    let projection_name = CString::new("projection").unwrap();
+
+    let color_uniform_location = gl::GetUniformLocation(program, color_uniform_name.as_ptr());
+    let projection_location = gl::GetUniformLocation(program, projection_name.as_ptr());
+
+    gl::Uniform3fv(color_uniform_location, 1, color.as_ptr());
+    gl::UniformMatrix4fv(
+        projection_location,
+        1,
+        gl::FALSE,
+        projection.as_slice().as_ptr(),
+    );
+
+    gl::Enable(gl::BLEND);
+    gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+
+    gl::Enable(gl::DEPTH_TEST);
+    gl::DepthFunc(gl::LESS);
+
+    draw_quad(quad_vao, quad_vbo, (x, height as f32 - y), (h, w));
 }

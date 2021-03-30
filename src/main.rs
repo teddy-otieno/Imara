@@ -24,15 +24,15 @@ use nalgebra::Vector3;
 
 use crate::core::{camera_behaviour, load_fonts, Engine, EventManager};
 use crate::ui::ui::View;
-use crate::utils::Cords;
 use editor::editor::{update_editor, Editor};
-use game_world::world::AssetSource;
 use game_world::world::World;
 use gl_bindings::Display;
 use systems::physics::Physics;
 use systems::render_system::Renderer;
 use systems::system::{System, Systems};
-use ui::ui::{init_ui, SimpleUIContainer, TextView, ViewDimens, ViewPosition};
+use ui::ui::{
+    init_ui, Orientation, SimpleUIContainer, TextView, ViewContainer, ViewDimens, ViewPosition,
+};
 
 fn main() {
     let display = gl_bindings::init_gl_window_context((1000, 600), "Imara");
@@ -40,7 +40,7 @@ fn main() {
 }
 
 fn run(display: Display) {
-    let fonts = unsafe { load_fonts(12) }.expect("Failed to load messages");
+    let fonts = unsafe { load_fonts(48) }.expect("Failed to load messages");
 
     let mut engine = Engine::new(display, fonts);
     let mut event_manager = EventManager::new();
@@ -52,16 +52,19 @@ fn run(display: Display) {
     init_ui(&mut engine, &mut world);
 
     let mut text_view = Box::new(TextView::new(
+        String::from("text_1").into_boxed_str(),
         String::from("Hello world"),
         ViewPosition { x: 10, y: 10 },
         1.0,
     ));
     let mut text_view_1 = Box::new(TextView::new(
+        String::from("text_2").into_boxed_str(),
         String::from("Hello world"),
         ViewPosition { x: 100, y: 100 },
         1.0,
     ));
     let mut text_view_2 = Box::new(TextView::new(
+        String::from("text_3").into_boxed_str(),
         String::from("Hello world"),
         ViewPosition { x: 200, y: 200 },
         1.0,
@@ -96,11 +99,19 @@ fn run(display: Display) {
     }));
 
     let simple_container_view_dimensions = Some(ViewDimens::new(1000, 600));
-    let mut simple_container = Box::new(SimpleUIContainer::new(simple_container_view_dimensions));
+    let simpe_container_position = Some(ViewPosition::new(500, 300));
+    let mut simple_container = Box::new(SimpleUIContainer::new(
+        String::from("simple_container").into_boxed_str(),
+        simple_container_view_dimensions,
+        simpe_container_position,
+        Orientation::Vertical,
+    ));
 
     simple_container.add_child(text_view);
     simple_container.add_child(text_view_1);
     simple_container.add_child(text_view_2);
+
+    // simple_container.remove_child("text_1");
 
     engine.ui_tree.root = Some(simple_container);
     // add_ui_element(&mut engine, text_view);
@@ -138,7 +149,8 @@ fn run(display: Display) {
         ticks += 1;
 
         if frame_time >= 1000000000 {
-            println!("Avg. Frame Time {} ns", frame_time / ticks);
+            println!("{} : Frames per second", ticks);
+            // println!("Avg. Frame Time {} ns", frame_time / ticks);
             frame_time = 0;
             ticks = 0;
         }

@@ -40,7 +40,7 @@ fn main() {
 }
 
 fn run(display: Display) {
-    let fonts = unsafe { load_fonts(48) }.expect("Failed to load messages");
+    let fonts = unsafe { load_fonts(12) }.expect("Failed to load messages");
 
     let mut engine = Engine::new(display, fonts);
     let mut event_manager = EventManager::new();
@@ -49,34 +49,39 @@ fn run(display: Display) {
     let mut systems = Systems::new();
     let mut editor = Editor::new();
 
-    init_ui(&mut engine, &mut world);
+    init_ui(&mut engine, &mut world).unwrap();
 
     let mut text_view = Box::new(TextView::new(
         String::from("text_1").into_boxed_str(),
         String::from("Hello world"),
         ViewPosition { x: 10, y: 10 },
         1.0,
+        10,
     ));
     let mut text_view_1 = Box::new(TextView::new(
         String::from("text_2").into_boxed_str(),
         String::from("Hello world"),
         ViewPosition { x: 100, y: 100 },
         1.0,
+        10,
     ));
     let mut text_view_2 = Box::new(TextView::new(
         String::from("text_3").into_boxed_str(),
         String::from("Hello world"),
         ViewPosition { x: 200, y: 200 },
         1.0,
+        10,
     ));
 
     text_view.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
-        view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
+        view_ref.color = Some(Vector3::new(1.0, 1.0, 1.0));
+        view_ref.background_color = [0.0, 0.4, 0.0]
     }));
     text_view.on_mouse_leave = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
         view_ref.color = Some(Vector3::new(1.0, 1.0, 1.0));
+        view_ref.background_color = [0.2, 0.2, 0.0]
     }));
 
     text_view_1.on_hover = Some(Box::new(|view: *mut TextView| unsafe {

@@ -86,10 +86,13 @@ pub struct TextView {
     text_length: u32,
     text_height: u32,
     cursor_hover: bool,
+
     pub text: String,
     pub position: ViewDimens,
     pub size: Option<ViewDimens>,
     pub color: Option<Vector3<f32>>,
+    pub background_color: [f32; 3],
+    pub padding: u32,
     //Note(teddy) Incase the size is not passed, use the fonts width and heights and update this value
     pub scale: f32,
 
@@ -133,7 +136,13 @@ unsafe fn initialize_background_buffers() -> (i32, i32) {
 }
 
 impl TextView {
-    pub fn new(id: Box<str>, text: String, position: ViewPosition, scale: f32) -> Self {
+    pub fn new(
+        id: Box<str>,
+        text: String,
+        position: ViewPosition,
+        scale: f32,
+        padding: u32,
+    ) -> Self {
         let mut vbo: u32 = 0;
         let mut vao: u32 = 0;
 
@@ -179,11 +188,13 @@ impl TextView {
                 scale,
                 size,
                 text_height: engine.font_face.font_size as u32,
+                padding,
                 text_length: length_of_text,
                 text_vao: vao as i32,
                 text_vbo: vbo as i32,
                 background_vao,
                 background_vbo,
+                background_color: [0.4, 0.4, 0.4],
                 cursor_hover: false,
                 text_shader_id: SHADER_TEXT_ID,
                 on_hover: None,
@@ -217,16 +228,25 @@ impl View for TextView {
 
         unsafe {
             let size = self.size.unwrap();
+
+            let quad_position = (
+                (self.position.x - self.padding) as f32,
+                (self.position.y + engine.font_face.font_size as u32 + self.padding) as f32,
+            );
+
+            let quad_size = (
+                (size.y + (self.padding << 1)) as f32,
+                (size.x + (self.padding << 1)) as f32,
+            );
+
             draw_quad_with_default_shader(
                 engine,
                 self.background_vao as u32,
                 self.background_vbo as u32,
-                (
-                    self.position.x as f32,
-                    (self.position.y + engine.font_face.font_size as u32) as f32,
-                ),
-                (size.y as f32, size.x as f32),
-                &[0.2, 0.2, 0.2],
+                quad_position,
+                quad_size,
+                // &[0.2, 0.2, 0.2],
+                &self.background_color,
             );
             draw_text(
                 self.text_vao as u32,
@@ -244,13 +264,26 @@ impl View for TextView {
         Ok(())
     }
 
-    fn compute_intersect_with_cursor_cords(&mut self, _engine: &Engine, cords: &Cords<f32>) {
-        let min_x = self.position.x;
-        let min_y = self.position.y;
+    fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>) {
+
+        //Note(teddy) Internall cordinate space is flipped with the screen cordinate space on the y-axis.
+        //So the y position will be subbed from the padding.
+        let quad_position = (
+            (self.position.x - self.padding) as f32,
+            (self.position.y - self.padding) as f32,
+        );
+
+        let quad_size = (
+            (self.size.unwrap_or(ViewDimens::zerod()).x + (self.padding << 1)) as f32,
+            (self.size.unwrap_or(ViewDimens::zerod()).y + (self.padding << 1)) as f32,
+        );
+
+        let min_x = quad_position.0;
+        let min_y = quad_position.1;
 
         //FIXME(teddy): The length doesn't seem to match the actual screen length
-        let max_x = min_x + self.text_length;
-        let max_y = min_y + self.text_height;
+        let max_x = min_x + quad_size.0;
+        let max_y = min_y + quad_size.1;
 
         if (cords.x > min_x as f32 && cords.x < max_x as f32)
             && (cords.y > min_y as f32 && cords.y < max_y as f32)
@@ -267,7 +300,14 @@ impl View for TextView {
     }
 
     fn get_view_dimensions(&self) -> Option<ViewDimens> {
-        self.size
+        match self.size {
+            Some(size) => Some(ViewDimens::new(
+                size.y + (self.padding << 1),
+                size.x + (self.padding << 1),
+            )),
+
+            None => None,
+        }
     }
 
     fn set_position(&mut self, position: ViewPosition) {

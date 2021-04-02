@@ -87,29 +87,33 @@ fn run(display: Display) {
     text_view_1.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
         view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
+        view_ref.background_color = [0.0, 0.4, 0.0]
     }));
 
     text_view_1.on_mouse_leave = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
         view_ref.color = Some(Vector3::new(1.0, 1.0, 1.0));
+        view_ref.background_color = [0.2, 0.2, 0.0]
     }));
 
     text_view_2.on_hover = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
         view_ref.color = Some(Vector3::new(0.0, 1.0, 0.0));
+        view_ref.background_color = [0.0, 0.4, 0.0]
     }));
     text_view_2.on_mouse_leave = Some(Box::new(|view: *mut TextView| unsafe {
         let view_ref = view.as_mut().unwrap();
         view_ref.color = Some(Vector3::new(1.0, 1.0, 1.0));
+        view_ref.background_color = [0.2, 0.2, 0.0]
     }));
 
-    let simple_container_view_dimensions = Some(ViewDimens::new(1000, 600));
-    let simpe_container_position = Some(ViewPosition::new(500, 300));
+    // let simple_container_view_dimensions = Some(ViewDimens::new(1000, 600));
+    let simpe_container_position = Some(ViewPosition::new(300, 300));
     let mut simple_container = Box::new(SimpleUIContainer::new(
         String::from("simple_container").into_boxed_str(),
-        simple_container_view_dimensions,
+        None,
         simpe_container_position,
-        Orientation::Vertical,
+        Orientation::Horizontal,
     ));
 
     simple_container.add_child(text_view);

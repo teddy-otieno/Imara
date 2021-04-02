@@ -10,7 +10,7 @@ use ncollide3d::query::Ray;
 use crate::game_world::components::HighlightComponent;
 use crate::game_world::world::{EntityID, World, FONT_ASSETS_DIR};
 use crate::gl_bindings::Display;
-use crate::ui::ui::{propagate_cursor_pos_to_ui, UITree, View};
+use crate::ui::ui::{propagate_button_click, propagate_cursor_pos_to_ui, UITree, View};
 use crate::utils::Cords;
 
 #[derive(Debug)]
@@ -100,20 +100,23 @@ impl Engine {
                     propagate_cursor_pos_to_ui(self, cords)
                 }
 
-                WindowEvent::MouseButton(_button, _action, _modifiers) => {
-                    let direction = compute_ray_from_mouse_cords(
-                        (self.camera.new_cords.x, self.camera.new_cords.y),
-                        self.camera.view_port,
-                        self.camera.perspective(),
-                        self.camera.view(),
-                    );
+                WindowEvent::MouseButton(button, _action, _modifiers) => {
+                    //Note(teddy) This event was not handled in UI meaning button click wasn't in a ui element
+                    if !propagate_button_click(self, button, self.camera.new_cords) {
+                        let direction = compute_ray_from_mouse_cords(
+                            (self.camera.new_cords.x, self.camera.new_cords.y),
+                            self.camera.view_port,
+                            self.camera.perspective(),
+                            self.camera.view(),
+                        );
 
-                    dbg!(&direction);
-                    dbg!(&self.camera.camera_front);
-                    let ray = Ray::new(Point3::from(self.camera.position), direction);
+                        dbg!(&direction);
+                        dbg!(&self.camera.camera_front);
+                        let ray = Ray::new(Point3::from(self.camera.position), direction);
 
-                    unsafe {
-                        (*eve_ptr).add_engine_event(Event::CastRay(CastRayDat { id: 0, ray }));
+                        unsafe {
+                            (*eve_ptr).add_engine_event(Event::CastRay(CastRayDat { id: 0, ray }));
+                        }
                     }
                 }
 
@@ -416,8 +419,8 @@ pub fn camera_behaviour(engine: &mut Engine) {
 
 #[derive(Debug)]
 pub struct FontFace {
-    font_name: String, //TODO(teddy) Get the name of the font from the ttf files
-    pub font_size: u8, //Similar to the font-size
+    font_name: String,  //TODO(teddy) Get the name of the font from the ttf files
+    pub font_size: u32, //Similar to the font-size
     pub chars: HashMap<char, FontChar>,
 }
 
@@ -441,7 +444,7 @@ pub struct FontChar {
 
 //Note(teddy) Caller can generate fonts for different sizes depending on their needs
 //The unnecessary fonts should be freed accordingly
-pub unsafe fn load_fonts(font_size: u8) -> Result<FontFace, FontError> {
+pub unsafe fn load_fonts(font_size: u32) -> Result<FontFace, FontError> {
     let mut ft_lib: freetype::FT_Library = std::ptr::null_mut();
     if freetype::FT_Init_FreeType(&mut ft_lib) != 0 {
         return Err(FontError::FailedToLoadFontLib);
@@ -454,7 +457,7 @@ pub unsafe fn load_fonts(font_size: u8) -> Result<FontFace, FontError> {
         return Err(FontError::UnableToLoadFont);
     }
 
-    freetype::FT_Set_Pixel_Sizes(font_face, 0, font_size as u32);
+    freetype::FT_Set_Pixel_Sizes(font_face, 0, font_size);
 
     let mut characters = HashMap::new();
 

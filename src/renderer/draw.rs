@@ -353,14 +353,20 @@ pub unsafe fn draw_text(
 }
 
 //Note(teddy) Draw any quad
-pub unsafe fn draw_quad(quad_vao: u32, quad_vbo: u32, (x, y): (f32, f32), (h, w): (f32, f32)) {
-    let vertices: [[f32; 2]; 6] = [
-        [x, y + h],
-        [x, y],
-        [x + w, y],
-        [x, y + h],
-        [x + w, y],
-        [x + w, y + h],
+pub unsafe fn draw_quad(
+    quad_vao: u32,
+    quad_vbo: u32,
+    z_position: f32,
+    (x, y): (f32, f32),
+    (h, w): (f32, f32),
+) {
+    let vertices: [[f32; 3]; 6] = [
+        [x, y + h, z_position],
+        [x, y, z_position],
+        [x + w, y, z_position],
+        [x, y + h, z_position],
+        [x + w, y, z_position],
+        [x + w, y + h, z_position],
     ];
 
     gl::BindVertexArray(quad_vao);
@@ -368,7 +374,7 @@ pub unsafe fn draw_quad(quad_vao: u32, quad_vbo: u32, (x, y): (f32, f32), (h, w)
     gl::BufferSubData(
         gl::ARRAY_BUFFER,
         0,
-        (vertices.len() * 2 * std::mem::size_of::<f32>()) as isize,
+        (vertices.len() * 3 * std::mem::size_of::<f32>()) as isize,
         vertices.as_ptr() as *const c_void,
     );
 
@@ -383,6 +389,7 @@ pub unsafe fn draw_quad_with_default_shader(
     engine: &Engine,
     quad_vao: u32,
     quad_vbo: u32,
+    z_position: f32,
     (x, y): (f32, f32),
     (h, w): (f32, f32),
     color: &[f32; 3],
@@ -416,5 +423,11 @@ pub unsafe fn draw_quad_with_default_shader(
     gl::Enable(gl::DEPTH_TEST);
     gl::DepthFunc(gl::LESS);
 
-    draw_quad(quad_vao, quad_vbo, (x, height as f32 - y), (h, w));
+    draw_quad(
+        quad_vao,
+        quad_vbo,
+        z_position,
+        (x, height as f32 - y),
+        (h, w),
+    );
 }

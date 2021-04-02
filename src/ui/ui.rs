@@ -1,5 +1,6 @@
 use crate::core::{Engine, FontFace};
 use crate::renderer::draw::{draw_quad_with_default_shader, draw_text};
+use glfw::MouseButton;
 use nalgebra::Vector3;
 use std::ffi::c_void;
 use std::ptr::null;
@@ -24,23 +25,34 @@ impl<T> Dimensions<T> {
     }
 }
 
-impl Dimensions<u32> {
+impl Dimensions<i32> {
     pub fn zerod() -> Self {
         Self { x: 0, y: 0 }
     }
 }
 
-pub type ViewDimens = Dimensions<u32>;
-pub type ViewPosition = Dimensions<u32>;
+pub type ViewDimens = Dimensions<i32>;
+pub type ViewPosition = Dimensions<i32>;
 
 pub trait View {
     fn get_id(&self) -> &str;
     fn update(&mut self, engine: &Engine) -> UIResult;
     fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>);
 
-    fn receive_cursor_cords(&mut self, engine: &mut Engine, cords: Cords<f32>) {
+    fn receive_cursor_cords(&mut self, engine: &Engine, cords: Cords<f32>) {
         self.compute_intersect_with_cursor_cords(&engine, &cords);
     }
+
+    fn handle_button_click(
+        &mut self,
+        engine: &Engine,
+        button: &MouseButton,
+        cords: Cords<f32>,
+    ) -> bool {
+        println!("{} clicked", self.get_id());
+        true
+    }
+
     fn update_dimensions(&mut self, _dimensions: ViewDimens) {}
     fn get_view_dimensions(&self) -> Option<ViewDimens> {
         None
@@ -76,6 +88,13 @@ pub enum UIError {
     ViewNotFound,
 }
 
+#[derive(PartialEq)]
+enum CursorState {
+    Hover,
+    Leave,
+    Neither,
+}
+
 pub struct TextView {
     id: Box<str>,
     text_vao: i32,
@@ -85,14 +104,14 @@ pub struct TextView {
     text_shader_id: u32,
     text_length: u32,
     text_height: u32,
-    cursor_hover: bool,
+    cursor_hover: CursorState,
 
     pub text: String,
     pub position: ViewDimens,
     pub size: Option<ViewDimens>,
     pub color: Option<Vector3<f32>>,
     pub background_color: [f32; 3],
-    pub padding: u32,
+    pub padding: i32,
     //Note(teddy) Incase the size is not passed, use the fonts width and heights and update this value
     pub scale: f32,
 
@@ -114,7 +133,7 @@ unsafe fn initialize_background_buffers() -> (i32, i32) {
     gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
     gl::BufferData(
         gl::ARRAY_BUFFER,
-        (6 * 2 * std::mem::size_of::<f32>()) as isize,
+        (6 * 3 * std::mem::size_of::<f32>()) as isize,
         null(),
         gl::DYNAMIC_DRAW,
     );
@@ -122,10 +141,10 @@ unsafe fn initialize_background_buffers() -> (i32, i32) {
     gl::EnableVertexAttribArray(0);
     gl::VertexAttribPointer(
         0,
-        2, //Using vec2 when drawing quads inside the shader
+        3, //Using vec3 when drawing quads inside the shader
         gl::FLOAT,
         gl::FALSE,
-        (2 * std::mem::size_of::<f32>()) as i32,
+        (3 * std::mem::size_of::<f32>()) as i32,
         0 as *const c_void,
     );
 
@@ -141,7 +160,7 @@ impl TextView {
         text: String,
         position: ViewPosition,
         scale: f32,
-        padding: u32,
+        padding: i32,
     ) -> Self {
         let mut vbo: u32 = 0;
         let mut vao: u32 = 0;
@@ -150,8 +169,8 @@ impl TextView {
         let length_of_text = get_the_length_of_text(&text, &engine.font_face);
 
         let size = Some(Dimensions::new(
-            length_of_text,
-            engine.font_face.font_size as u32,
+            length_of_text as i32,
+            engine.font_face.font_size as i32,
         ));
         unsafe {
             gl::GenVertexArrays(1, &mut vao);
@@ -195,7 +214,7 @@ impl TextView {
                 background_vao,
                 background_vbo,
                 background_color: [0.4, 0.4, 0.4],
-                cursor_hover: false,
+                cursor_hover: CursorState::Neither,
                 text_shader_id: SHADER_TEXT_ID,
                 on_hover: None,
                 on_mouse_leave: None,
@@ -212,13 +231,24 @@ impl View for TextView {
 
     fn update(&mut self, engine: &Engine) -> UIResult {
         let view: *mut TextView = self;
-        if self.cursor_hover && self.on_hover.is_some() {
-            self.on_hover.as_mut().unwrap()(view);
-        }
 
-        if !self.cursor_hover && self.on_mouse_leave.is_some() {
-            self.on_mouse_leave.as_mut().unwrap()(view);
-        }
+        match self.cursor_hover {
+            CursorState::Hover => {
+                if let Some(func) = &mut self.on_hover {
+                    func(view);
+                }
+            }
+
+            CursorState::Leave => {
+                if let Some(func) = &mut self.on_mouse_leave {
+                    println!("Mouse leaving");
+                    func(view);
+                    self.cursor_hover = CursorState::Neither;
+                }
+            }
+
+            _ => (),
+        };
 
         let default_text_color: Vector3<f32> = Vector3::new(1.0, 1.0, 1.0);
         let color = match &self.color {
@@ -229,9 +259,9 @@ impl View for TextView {
         unsafe {
             let size = self.size.unwrap();
 
-            let quad_position = (
-                (self.position.x - self.padding) as f32,
-                (self.position.y + engine.font_face.font_size as u32 + self.padding) as f32,
+            let text_position = (
+                (self.position.x + self.padding) as f32,
+                (self.position.y - engine.font_face.font_size as i32 - self.padding) as f32,
             );
 
             let quad_size = (
@@ -243,7 +273,8 @@ impl View for TextView {
                 engine,
                 self.background_vao as u32,
                 self.background_vbo as u32,
-                quad_position,
+                -0.3,
+                (self.position.x as f32, self.position.y as f32),
                 quad_size,
                 // &[0.2, 0.2, 0.2],
                 &self.background_color,
@@ -254,8 +285,8 @@ impl View for TextView {
                 &engine,
                 self.text_shader_id,
                 self.text.as_str(),
-                self.position.x as f32,
-                self.position.y as f32,
+                text_position.0,
+                text_position.1,
                 1.0,
                 color,
             );
@@ -265,18 +296,14 @@ impl View for TextView {
     }
 
     fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>) {
-
         //Note(teddy) Internall cordinate space is flipped with the screen cordinate space on the y-axis.
         //So the y position will be subbed from the padding.
-        let quad_position = (
-            (self.position.x - self.padding) as f32,
-            (self.position.y - self.padding) as f32,
-        );
-
         let quad_size = (
             (self.size.unwrap_or(ViewDimens::zerod()).x + (self.padding << 1)) as f32,
             (self.size.unwrap_or(ViewDimens::zerod()).y + (self.padding << 1)) as f32,
         );
+
+        let quad_position = (self.position.x as f32, self.position.y as f32 - quad_size.1);
 
         let min_x = quad_position.0;
         let min_y = quad_position.1;
@@ -288,22 +315,23 @@ impl View for TextView {
         if (cords.x > min_x as f32 && cords.x < max_x as f32)
             && (cords.y > min_y as f32 && cords.y < max_y as f32)
         {
-            self.cursor_hover = true;
+            self.cursor_hover = CursorState::Hover;
         } else {
-            //TODO(teddy) Add on mouse leave event
-            self.cursor_hover = false;
+            if self.cursor_hover != CursorState::Neither {
+                self.cursor_hover = CursorState::Leave;
+            }
         }
     }
 
-    fn receive_cursor_cords(&mut self, engine: &mut Engine, cords: Cords<f32>) {
+    fn receive_cursor_cords(&mut self, engine: &Engine, cords: Cords<f32>) {
         self.compute_intersect_with_cursor_cords(&engine, &cords);
     }
 
     fn get_view_dimensions(&self) -> Option<ViewDimens> {
         match self.size {
             Some(size) => Some(ViewDimens::new(
-                size.y + (self.padding << 1),
                 size.x + (self.padding << 1),
+                size.y + (self.padding << 1),
             )),
 
             None => None,
@@ -379,6 +407,24 @@ pub fn propagate_cursor_pos_to_ui(engine: *mut Engine, cords: Cords<f32>) {
     }
 }
 
+///Mouse click propagated and received by the ui will return false;
+///Incase a ui element receives and process the event, it should return a false
+pub fn propagate_button_click(
+    engine: *mut Engine,
+    button: &MouseButton,
+    cords: Cords<f32>,
+) -> bool {
+    let mut result = true;
+    let eng_ref = unsafe { engine.as_mut().unwrap() };
+    let ref_for_view = unsafe { engine.as_mut().unwrap() };
+
+    if let Some(view) = &mut eng_ref.ui_tree.root {
+        result = view.handle_button_click(ref_for_view, button, cords);
+    }
+
+    result
+}
+
 pub enum Orientation {
     Vertical,
     Horizontal,
@@ -390,6 +436,8 @@ pub struct SimpleUIContainer {
     dimensions: Option<ViewDimens>,
     position: Option<ViewPosition>,
     orientation: Orientation,
+    background_vao: i32,
+    background_vbo: i32,
 }
 
 impl SimpleUIContainer {
@@ -399,22 +447,26 @@ impl SimpleUIContainer {
         position: Option<ViewPosition>,
         orientation: Orientation,
     ) -> Self {
+        let background_buffers = unsafe { initialize_background_buffers() };
+
         Self {
             id,
             children: vec![],
             dimensions,
             position,
             orientation,
+            background_vao: background_buffers.0,
+            background_vbo: background_buffers.1,
         }
     }
 
-    fn recalculate_dimensions(&self) {
+    fn recalculate_dimensions(&mut self) {
         let mut new_dimensions = ViewDimens::zerod();
 
         //Note(teddy) Updating the length and height based on the orientation of the container
         match self.orientation {
             Orientation::Vertical => {
-                let mut height: u32 = 0;
+                let mut height: i32 = 0;
                 let mut view_dimens = ViewDimens::zerod();
 
                 for child in self.children.iter() {
@@ -427,7 +479,7 @@ impl SimpleUIContainer {
             }
 
             Orientation::Horizontal => {
-                let mut width: u32 = 0;
+                let mut width: i32 = 0;
                 let mut view_dimens = ViewDimens::zerod();
 
                 for child in self.children.iter() {
@@ -439,6 +491,8 @@ impl SimpleUIContainer {
                 new_dimensions.x = width;
             }
         }
+
+        self.dimensions = Some(new_dimensions);
     }
 }
 
@@ -448,18 +502,61 @@ impl View for SimpleUIContainer {
     }
 
     fn update(&mut self, engine: &Engine) -> UIResult {
+        let quad_size = (
+            (self.dimensions.unwrap().y) as f32,
+            (self.dimensions.unwrap().x) as f32,
+        );
+
+        let quad_position = (
+            self.position.unwrap().x as f32,
+            engine.camera.view_port.1 as f32 - self.position.unwrap().y as f32 + quad_size.0,
+        );
+
+        unsafe {
+            draw_quad_with_default_shader(
+                engine,
+                self.background_vao as u32,
+                self.background_vbo as u32,
+                -0.4,
+                quad_position,
+                quad_size,
+                // &[0.2, 0.2, 0.2],
+                &[0.6, 0.3, 0.3],
+            );
+        }
+
         //TODO(teddy) This initial position will be the position of the container
-        let mut initial_position = self.position.unwrap().y;
-        for view in self.children.iter_mut() {
-            view.set_position(ViewPosition::new(
-                self.position.unwrap().x,
-                initial_position,
-            ));
-            if let Some(view_dimens) = view.get_view_dimensions() {
-                initial_position += view_dimens.y + 10;
+        //
+        match self.orientation {
+            Orientation::Vertical => {
+                let mut initial_y_position = self.position.unwrap().y;
+
+                for view in self.children.iter_mut() {
+                    let view_dimensions = view.get_view_dimensions().unwrap_or(ViewDimens::zerod());
+                    view.set_position(ViewPosition::new(
+                        self.position.unwrap().x,
+                        initial_y_position + view_dimensions.y,
+                    ));
+
+                    initial_y_position += view_dimensions.y;
+                    view.update(engine).unwrap();
+                }
             }
 
-            view.update(engine).unwrap();
+            Orientation::Horizontal => {
+                let mut intial_x_position = self.position.unwrap().x;
+
+                for view in self.children.iter_mut() {
+                    let view_dimensions = view.get_view_dimensions().unwrap_or(ViewDimens::zerod());
+
+                    view.set_position(ViewPosition::new(
+                        intial_x_position,
+                        self.position.unwrap().y + view_dimensions.y,
+                    ));
+                    intial_x_position += view_dimensions.x;
+                    view.update(engine).unwrap();
+                }
+            }
         }
 
         //Draw items in a column
@@ -471,7 +568,7 @@ impl View for SimpleUIContainer {
         //TODO(teddy) implement a simple ui container
     }
 
-    fn receive_cursor_cords(&mut self, engine: &mut Engine, cords: Cords<f32>) {
+    fn receive_cursor_cords(&mut self, engine: &Engine, cords: Cords<f32>) {
         self.compute_intersect_with_cursor_cords(&engine, &cords);
 
         for view in self.children.iter_mut() {

@@ -1,8 +1,8 @@
 #version 330
-layout (location=0) in vec2 vertex;
+layout (location=0) in vec3 vertex;
 
 uniform mat4 projection;
 
 void main() {
-    gl_Position = projection * vec4(vertex, -0.1, 1.0);
+    gl_Position = projection * vec4(vertex, 1.0);
 }

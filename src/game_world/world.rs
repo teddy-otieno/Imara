@@ -88,7 +88,7 @@ impl Resources {
                 let id = self.shaders.len();
                 self.shaders.push_back(shader);
 
-                shader as usize
+                id as usize
             }
 
             AssetSource::Texture(_) => 0,

@@ -25,7 +25,7 @@ use nalgebra::Vector3;
 use crate::core::{camera_behaviour, load_fonts, Engine, EventManager};
 use crate::ui::ui::View;
 use editor::editor::{update_editor, Editor};
-use game_world::world::World;
+use game_world::world::{World, AssetSource};
 use gl_bindings::Display;
 use systems::physics::Physics;
 use systems::render_system::Renderer;
@@ -47,11 +47,19 @@ fn run(display: Display) {
     let ev_pointer: *const EventManager = &event_manager;
     let mut world = World::new(ev_pointer as *mut EventManager);
     let mut systems = Systems::new();
-    let mut editor = Editor::new();
 
+
+    let shader_id = world.resources.add_resource(AssetSource::Shader(String::from("vert.glsl"), String::from("frag.glsl"), None));
     init_ui(&mut engine, &mut world).unwrap();
 
+    //TODO(teddy) Issue will happen
+    let mut editor = Editor::new(shader_id);
+    editor.init_editor_ui(&mut world);
+    engine.ui_tree = Some(&mut editor.ui_tree);
+
+    /*
     let mut text_view = Box::new(TextView::new(
+
         String::from("text_1").into_boxed_str(),
         String::from("Hello world"),
         ViewPosition { x: 10, y: 10 },
@@ -108,7 +116,7 @@ fn run(display: Display) {
     }));
 
     // let simple_container_view_dimensions = Some(ViewDimens::new(1000, 600));
-    let simpe_container_position = Some(ViewPosition::new(300, 300));
+    let simpe_container_position = Some(ViewPosition::new(0, 0));
     let mut simple_container = Box::new(SimpleUIContainer::new(
         String::from("simple_container").into_boxed_str(),
         None,
@@ -127,6 +135,7 @@ fn run(display: Display) {
     // add_ui_element(&mut engine, text_view_1);
     // add_ui_element(&mut engine, text_view_2);
 
+    */
     let render_system: Box<dyn System> = Box::new(Renderer::new());
     let physics_system: Box<dyn System> = Box::new(Physics::new());
 

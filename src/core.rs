@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
+use std::marker::PhantomData;
 
 use freetype::freetype;
 use glfw::Key;
@@ -51,7 +52,7 @@ pub struct Engine {
     cursor_mode_toggle: bool,
 
     pub ui_view: Vec<Box<dyn View>>,
-    pub ui_tree: UITree,
+    pub ui_tree: Option<*mut UITree>,
     pub ui_frame_buffer: Option<u32>,
 }
 
@@ -72,8 +73,12 @@ impl Engine {
             font_face,
             ui_view: vec![],
             ui_frame_buffer: None,
-            ui_tree: UITree::new(),
+            ui_tree: None,
         }
+    }
+
+    pub fn get_ui_tree(&mut self) -> Option<&mut UITree> {
+        unsafe { self.ui_tree.as_ref().unwrap().as_mut() }
     }
 
     pub fn update(&mut self, world: &mut World, event_manager: &mut EventManager) {

@@ -147,7 +147,7 @@ unsafe fn draw_ui(engine: *mut Engine) {
     //     view.update(engine.as_mut().unwrap()).unwrap();
     // }
 
-    if let Some(view) = &mut eng.ui_tree.root {
+    if let Some(view) = &mut eng.get_ui_tree().unwrap().root {
         match view.update(engine.as_ref().unwrap()) {
             Ok(_) => (),
             Err(_) => println!("A view failed to update"),

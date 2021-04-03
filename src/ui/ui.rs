@@ -7,7 +7,7 @@ use std::ptr::null;
 
 use crate::game_world::world::AssetSource;
 use crate::game_world::world::World;
-use crate::utils::Cords;
+use crate::utils::{Cords, get_at_index};
 
 static mut SHADER_TEXT_ID: u32 = 0;
 pub static mut UI_QUAD_SHADER_ID: u32 = 0;
@@ -48,10 +48,7 @@ pub trait View {
         engine: &Engine,
         button: &MouseButton,
         cords: Cords<f32>,
-    ) -> bool {
-        println!("{} clicked", self.get_id());
-        true
-    }
+    ) -> bool;
 
     fn update_dimensions(&mut self, _dimensions: ViewDimens) {}
     fn get_view_dimensions(&self) -> Option<ViewDimens> {
@@ -117,6 +114,7 @@ pub struct TextView {
 
     pub on_hover: Option<Box<dyn FnMut(*mut TextView)>>,
     pub on_mouse_leave: Option<Box<dyn FnMut(*mut TextView)>>,
+    pub on_click: Option<Box<dyn Fn(*mut TextView)>>
 }
 
 pub type UIResult = Result<(), UIError>;
@@ -218,6 +216,7 @@ impl TextView {
                 text_shader_id: SHADER_TEXT_ID,
                 on_hover: None,
                 on_mouse_leave: None,
+                on_click: None,
                 color: None,
             }
         }
@@ -298,23 +297,12 @@ impl View for TextView {
     fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>) {
         //Note(teddy) Internall cordinate space is flipped with the screen cordinate space on the y-axis.
         //So the y position will be subbed from the padding.
-        let quad_size = (
-            (self.size.unwrap_or(ViewDimens::zerod()).x + (self.padding << 1)) as f32,
-            (self.size.unwrap_or(ViewDimens::zerod()).y + (self.padding << 1)) as f32,
-        );
-
-        let quad_position = (self.position.x as f32, self.position.y as f32 - quad_size.1);
-
-        let min_x = quad_position.0;
-        let min_y = quad_position.1;
-
-        //FIXME(teddy): The length doesn't seem to match the actual screen length
-        let max_x = min_x + quad_size.0;
-        let max_y = min_y + quad_size.1;
-
-        if (cords.x > min_x as f32 && cords.x < max_x as f32)
-            && (cords.y > min_y as f32 && cords.y < max_y as f32)
-        {
+        if does_cursor_intersect(
+            cords,
+            self.position,
+            self.size.unwrap_or(ViewDimens::zerod()),
+            self.padding,
+        ) {
             self.cursor_hover = CursorState::Hover;
         } else {
             if self.cursor_hover != CursorState::Neither {
@@ -327,6 +315,27 @@ impl View for TextView {
         self.compute_intersect_with_cursor_cords(&engine, &cords);
     }
 
+    fn handle_button_click(
+        &mut self,
+        engine: &Engine,
+        button: &MouseButton,
+        cords: Cords<f32>,
+    ) -> bool {
+        if does_cursor_intersect(
+            &cords,
+            self.position,
+            self.size.unwrap_or(ViewDimens::zerod()),
+            self.padding,
+        ) {
+
+            let self_ptr: *mut TextView = self;
+            if let Some(func) = &self.on_click {
+                func(self_ptr);
+            }
+        }
+
+        true
+    }
     fn get_view_dimensions(&self) -> Option<ViewDimens> {
         match self.size {
             Some(size) => Some(ViewDimens::new(
@@ -345,6 +354,30 @@ impl View for TextView {
     fn get_position(&self) -> Option<ViewPosition> {
         Some(self.position)
     }
+}
+
+fn does_cursor_intersect(
+    cords: &Cords<f32>,
+    position: ViewDimens,
+    size: ViewDimens,
+    padding: i32,
+) -> bool {
+    let quad_size = (
+        (size.x + (padding << 1)) as f32,
+        (size.y + (padding << 1)) as f32,
+    );
+
+    let quad_position = (position.x as f32, position.y as f32 - quad_size.1 as f32);
+
+    let min_x = quad_position.0;
+    let min_y = quad_position.1;
+
+    //FIXME(teddy): The length doesn't seem to match the actual screen length
+    let max_x = min_x + quad_size.0;
+    let max_y = min_y + quad_size.1;
+
+    (cords.x > min_x as f32 && cords.x < max_x as f32)
+        && (cords.y > min_y as f32 && cords.y < max_y as f32)
 }
 
 fn get_the_length_of_text(text: &String, font_face: &FontFace) -> u32 {
@@ -374,21 +407,24 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
     }
     engine.ui_frame_buffer = Some(fbo);
 
-    let shader_id = world.resources.add_resource(AssetSource::Shader(
+    let raw_shader_id = world.resources.add_resource(AssetSource::Shader(
         String::from("font_vert.glsl"),
         String::from("font_frag.glsl"),
         None,
     ));
 
-    let quad_shader = world.resources.add_resource(AssetSource::Shader(
+    let raw_quad_shader = world.resources.add_resource(AssetSource::Shader(
         String::from("ui_quad_vert.glsl"),
         String::from("ui_quad_frag.glsl"),
         None,
     ));
 
+    let shader_id = get_at_index(&world.resources.shaders, raw_shader_id).unwrap();
+    let quad_shader = get_at_index(&world.resources.shaders, raw_quad_shader).unwrap();
+
     unsafe {
-        SHADER_TEXT_ID = shader_id as u32;
-        UI_QUAD_SHADER_ID = quad_shader as u32;
+        SHADER_TEXT_ID = *shader_id;
+        UI_QUAD_SHADER_ID = *quad_shader;
     };
     Ok(())
 }
@@ -401,7 +437,7 @@ pub fn propagate_cursor_pos_to_ui(engine: *mut Engine, cords: Cords<f32>) {
     // }
 
     unsafe {
-        if let Some(view) = &mut (&mut *engine).ui_tree.root {
+        if let Some(view) = &mut (&mut *engine).get_ui_tree().unwrap().root {
             view.receive_cursor_cords(&mut *engine, cords);
         }
     }
@@ -418,7 +454,7 @@ pub fn propagate_button_click(
     let eng_ref = unsafe { engine.as_mut().unwrap() };
     let ref_for_view = unsafe { engine.as_mut().unwrap() };
 
-    if let Some(view) = &mut eng_ref.ui_tree.root {
+    if let Some(view) = &mut eng_ref.get_ui_tree().unwrap().root {
         result = view.handle_button_click(ref_for_view, button, cords);
     }
 
@@ -493,6 +529,11 @@ impl SimpleUIContainer {
         }
 
         self.dimensions = Some(new_dimensions);
+
+        //Flip the y for this quad
+        if let Some(position) = self.position {
+            self.position = Some(ViewDimens::new(position.x, position.y));
+        }
     }
 }
 
@@ -501,15 +542,46 @@ impl View for SimpleUIContainer {
         &(self.id)
     }
 
+    fn handle_button_click(
+        &mut self,
+        engine: &Engine,
+        button: &MouseButton,
+        cords: Cords<f32>,
+    ) -> bool {
+
+
+        let container_position = match self.position {
+            Some(position) => {
+                ViewDimens::new(position.x, position.y + self.dimensions.unwrap().y)
+            }
+
+            None => ViewDimens::zerod()
+        };
+
+        if does_cursor_intersect(
+            &cords,
+            //self.position.unwrap_or(ViewDimens::zerod()),
+            container_position,
+            self.dimensions.unwrap_or(ViewDimens::zerod()),
+            0,
+        ) {
+            for view in &mut self.children {
+                view.handle_button_click(engine, button, cords);
+            }
+        }
+
+        true
+    }
+
     fn update(&mut self, engine: &Engine) -> UIResult {
         let quad_size = (
-            (self.dimensions.unwrap().y) as f32,
-            (self.dimensions.unwrap().x) as f32,
+            (self.dimensions.unwrap_or(ViewDimens::new(10, 10)).y) as f32,
+            (self.dimensions.unwrap_or(ViewDimens::new(10, 10)).x) as f32,
         );
 
         let quad_position = (
             self.position.unwrap().x as f32,
-            engine.camera.view_port.1 as f32 - self.position.unwrap().y as f32 + quad_size.0,
+            self.position.unwrap().y as f32 + quad_size.0,
         );
 
         unsafe {
@@ -526,7 +598,7 @@ impl View for SimpleUIContainer {
         }
 
         //TODO(teddy) This initial position will be the position of the container
-        //
+        //TODO(teddy) optimize this to prevent recalculations
         match self.orientation {
             Orientation::Vertical => {
                 let mut initial_y_position = self.position.unwrap().y;

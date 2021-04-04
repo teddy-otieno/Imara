@@ -25,7 +25,7 @@ use nalgebra::Vector3;
 use crate::core::{camera_behaviour, load_fonts, Engine, EventManager};
 use crate::ui::ui::View;
 use editor::editor::{update_editor, Editor};
-use game_world::world::{World, AssetSource};
+use game_world::world::{AssetSource, World};
 use gl_bindings::Display;
 use systems::physics::Physics;
 use systems::render_system::Renderer;
@@ -48,8 +48,11 @@ fn run(display: Display) {
     let mut world = World::new(ev_pointer as *mut EventManager);
     let mut systems = Systems::new();
 
-
-    let shader_id = world.resources.add_resource(AssetSource::Shader(String::from("vert.glsl"), String::from("frag.glsl"), None));
+    let shader_id = world.resources.add_resource(AssetSource::Shader(
+        String::from("vert.glsl"),
+        String::from("frag.glsl"),
+        None,
+    ));
     init_ui(&mut engine, &mut world).unwrap();
 
     //TODO(teddy) Issue will happen

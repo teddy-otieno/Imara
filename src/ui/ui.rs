@@ -1,13 +1,14 @@
-use crate::core::{Engine, FontFace};
-use crate::renderer::draw::{draw_quad_with_default_shader, draw_text};
-use glfw::MouseButton;
-use nalgebra::Vector3;
 use std::ffi::c_void;
 use std::ptr::null;
 
+use glfw::MouseButton;
+use nalgebra::Vector3;
+
+use crate::core::{Engine, FontFace};
 use crate::game_world::world::AssetSource;
 use crate::game_world::world::World;
-use crate::utils::{Cords, get_at_index};
+use crate::renderer::draw::{draw_quad_with_default_shader, draw_text};
+use crate::utils::{get_at_index, Cords};
 
 static mut SHADER_TEXT_ID: u32 = 0;
 pub static mut UI_QUAD_SHADER_ID: u32 = 0;
@@ -46,7 +47,7 @@ pub trait View {
     fn handle_button_click(
         &mut self,
         engine: &Engine,
-        button: &MouseButton,
+        clicked_buttons: &Vec<MouseButton>,
         cords: Cords<f32>,
     ) -> bool;
 
@@ -114,7 +115,9 @@ pub struct TextView {
 
     pub on_hover: Option<Box<dyn FnMut(*mut TextView)>>,
     pub on_mouse_leave: Option<Box<dyn FnMut(*mut TextView)>>,
-    pub on_click: Option<Box<dyn Fn(*mut TextView)>>
+    pub on_click: Option<Box<dyn Fn(*mut TextView)>>,
+    pub on_right_click: Option<Box<dyn Fn(*mut TextView)>>,
+    pub on_middle_click: Option<Box<dyn Fn(*mut TextView)>>,
 }
 
 pub type UIResult = Result<(), UIError>;
@@ -217,6 +220,8 @@ impl TextView {
                 on_hover: None,
                 on_mouse_leave: None,
                 on_click: None,
+                on_right_click: None,
+                on_middle_click: None,
                 color: None,
             }
         }
@@ -318,7 +323,7 @@ impl View for TextView {
     fn handle_button_click(
         &mut self,
         engine: &Engine,
-        button: &MouseButton,
+        clicked_buttons: &Vec<MouseButton>,
         cords: Cords<f32>,
     ) -> bool {
         if does_cursor_intersect(
@@ -327,10 +332,33 @@ impl View for TextView {
             self.size.unwrap_or(ViewDimens::zerod()),
             self.padding,
         ) {
-
+            //Note(teddy) Left Click
             let self_ptr: *mut TextView = self;
-            if let Some(func) = &self.on_click {
-                func(self_ptr);
+            if let Some(_) = clicked_buttons
+                .iter()
+                .find(|b: &&MouseButton| **b == MouseButton::Button1)
+            {
+                if let Some(func) = &self.on_click {
+                    func(self_ptr);
+                }
+            } else if let Some(_) = clicked_buttons
+                .iter()
+                .find(|b: &&MouseButton| **b == MouseButton::Button2)
+            {
+                //Right Click
+                println!("Right click was clicked");
+                if let Some(func) = &self.on_right_click {
+                    func(self_ptr);
+                }
+            } else if let Some(_) = clicked_buttons
+                .iter()
+                .find(|b: &&MouseButton| **b == MouseButton::Button3)
+            {
+                //Middleclick
+                println!("Middle click was clicked");
+                if let Some(func) = &self.on_middle_click {
+                    func(self_ptr);
+                }
             }
         }
 
@@ -447,7 +475,7 @@ pub fn propagate_cursor_pos_to_ui(engine: *mut Engine, cords: Cords<f32>) {
 ///Incase a ui element receives and process the event, it should return a false
 pub fn propagate_button_click(
     engine: *mut Engine,
-    button: &MouseButton,
+    button: &Vec<MouseButton>,
     cords: Cords<f32>,
 ) -> bool {
     let mut result = true;
@@ -545,17 +573,13 @@ impl View for SimpleUIContainer {
     fn handle_button_click(
         &mut self,
         engine: &Engine,
-        button: &MouseButton,
+        button: &Vec<MouseButton>,
         cords: Cords<f32>,
     ) -> bool {
-
-
         let container_position = match self.position {
-            Some(position) => {
-                ViewDimens::new(position.x, position.y + self.dimensions.unwrap().y)
-            }
+            Some(position) => ViewDimens::new(position.x, position.y + self.dimensions.unwrap().y),
 
-            None => ViewDimens::zerod()
+            None => ViewDimens::zerod(),
         };
 
         if does_cursor_intersect(

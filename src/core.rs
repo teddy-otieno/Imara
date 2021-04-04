@@ -3,8 +3,7 @@ use std::ffi::{c_void, CString};
 use std::marker::PhantomData;
 
 use freetype::freetype;
-use glfw::Key;
-use glfw::{Action, FlushedMessages, WindowEvent};
+use glfw::{Action, FlushedMessages, Key, MouseButton, WindowEvent};
 use nalgebra::{Matrix, Matrix4, Point2, Point3, Vector3, Vector4};
 use ncollide3d::query::Ray;
 
@@ -46,6 +45,7 @@ pub struct Engine {
     pub camera: Camera,
     pub dir_lights: Light,
     pub pressed_keys: Vec<Key>,
+    pub mouse_button_keys: Vec<MouseButton>,
     pub select_mode: bool,
     pub font_face: FontFace,
     view_toggle: bool,
@@ -56,6 +56,25 @@ pub struct Engine {
     pub ui_frame_buffer: Option<u32>,
 }
 
+#[inline(always)]
+fn check_button(button: &MouseButton, action: &Action, buttons: &mut Vec<MouseButton>) {
+    match action {
+        Action::Press => {
+            if let None = buttons.iter().find(|b| *b == button) {
+                buttons.push(*button);
+            }
+        }
+
+        Action::Release => {
+            if let Some(button) = buttons.clone().into_iter().find(|b| b == button) {
+                buttons.retain(|b| *b != button);
+            }
+        }
+
+        _ => (),
+    }
+}
+
 //TODO(teddy) have an init routine
 impl Engine {
     pub fn new(display: Display, font_face: FontFace) -> Self {
@@ -64,12 +83,13 @@ impl Engine {
             camera: Camera::new(),
             view_toggle: true,
             pressed_keys: vec![],
+            mouse_button_keys: vec![],
             dir_lights: Light {
                 color: [1.0, 1.0, 1.0],
                 direction: [10.0, 30.0, 0.0],
             },
             select_mode: false,
-            cursor_mode_toggle: false,
+            cursor_mode_toggle: true,
             font_face,
             ui_view: vec![],
             ui_frame_buffer: None,
@@ -105,9 +125,32 @@ impl Engine {
                     propagate_cursor_pos_to_ui(self, cords)
                 }
 
-                WindowEvent::MouseButton(button, _action, _modifiers) => {
+                WindowEvent::MouseButton(button, action, _modifiers) => {
                     //Note(teddy) This event was not handled in UI meaning button click wasn't in a ui element
-                    if !propagate_button_click(self, button, self.camera.new_cords) {
+                    //
+
+                    println!("{:?}", self.mouse_button_keys);
+                    match button {
+                        MouseButton::Button1 => {
+                            check_button(button, action, &mut self.mouse_button_keys);
+                        }
+
+                        MouseButton::Button2 => {
+                            //println!("{:?}", self.mouse_button_keys);
+                            check_button(button, action, &mut self.mouse_button_keys);
+                        }
+
+                        MouseButton::Button3 => {
+                            check_button(button, action, &mut self.mouse_button_keys);
+                        }
+
+                        //TODO(teddy) will make the other buttons remappable for the next projects
+                        _ => (),
+                    }
+
+                    //TODO(teddy) Move the ui to its own system
+                    if !propagate_button_click(self, &self.mouse_button_keys, self.camera.new_cords)
+                    {
                         let direction = compute_ray_from_mouse_cords(
                             (self.camera.new_cords.x, self.camera.new_cords.y),
                             self.camera.view_port,
@@ -392,7 +435,7 @@ pub fn camera_behaviour(engine: &mut Engine) {
                     engine
                         .display
                         .window
-                        .set_cursor_mode(glfw::CursorMode::Hidden);
+                        .set_cursor_mode(glfw::CursorMode::Disabled);
                     engine.camera.first_move = true;
                 }
                 M_CLICKED = true;

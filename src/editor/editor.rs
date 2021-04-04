@@ -2,12 +2,12 @@ use std::fs;
 
 use nalgebra::Vector3;
 
+use crate::game_world::components::{RenderComponent, TransformComponent};
 use crate::game_world::world::World;
+use crate::game_world::world::{AssetSource, ObjType};
 use crate::ui::ui::{
     Orientation, SimpleUIContainer, TextView, UITree, ViewContainer, ViewPosition,
 };
-use crate::game_world::world::{ObjType, AssetSource};
-use crate::game_world::components::{RenderComponent, TransformComponent};
 
 pub struct Editor {
     pub ui_tree: UITree,
@@ -18,7 +18,7 @@ impl Editor {
     pub fn new(shader_id: usize) -> Self {
         Self {
             ui_tree: UITree::new(),
-            shader_id: shader_id
+            shader_id,
         }
     }
 
@@ -80,7 +80,7 @@ impl Editor {
             let shader = self.shader_id;
             let world_ptr: *mut World = world;
             asset_name_text_view.on_click = Some(Box::new(move |view: *mut TextView| {
-               create_entity(world_ptr, name.clone(), shader);
+                create_entity(world_ptr, name.clone(), shader);
             }));
 
             simple_container.add_child(asset_name_text_view)
@@ -91,17 +91,22 @@ impl Editor {
 }
 
 fn create_entity(world_ptr: *mut World, file_path: String, shader_id: usize) {
-    let world = unsafe {world_ptr.as_mut().unwrap()};
+    let world = unsafe { world_ptr.as_mut().unwrap() };
 
     let id = world.create_entity();
 
     let words: Vec<&str> = file_path.split("\\").collect();
-    let mesh_id = world.resources.add_resource(AssetSource::Mesh(ObjType::Normal, String::from(words[words.len() - 1])));
+    let mesh_id = world.resources.add_resource(AssetSource::Mesh(
+        ObjType::Normal,
+        String::from(words[words.len() - 1]),
+    ));
 
     world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
-    world.components.positionable[id] =
-        Some(TransformComponent::new(Vector3::new(0.0, -5.0, 0.0), Vector3::new(0.0, 1.0, 0.0), 1.0));
-
+    world.components.positionable[id] = Some(TransformComponent::new(
+        Vector3::new(0.0, -5.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        1.0,
+    ));
 
     println!("Entity {} succesffuly loaded", file_path);
 }

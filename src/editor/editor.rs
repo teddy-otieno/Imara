@@ -101,6 +101,8 @@ impl Editor {
     }
 }
 
+static mut counter: f32 = 0.0;
+
 fn create_entity(world_ptr: *mut World, engine_ptr: *mut Engine, file_path: String, shader_label: String) -> usize {
     let world = unsafe { world_ptr.as_mut().unwrap() };
     let engine = unsafe { engine_ptr.as_mut().unwrap() };
@@ -115,12 +117,16 @@ fn create_entity(world_ptr: *mut World, engine_ptr: *mut Engine, file_path: Stri
 
     world.components.renderables[id] = Some(RenderComponent::new(mesh_id.unwrap(), shader_label));
     world.components.positionable[id] = Some(TransformComponent::new(
-        Vector3::new(0.0, -50.0, 0.0),
+        Vector3::new(0.0 + (5.0 * unsafe {counter}), 0.0, 10.0),
         Vector3::new(0.0, 1.0, 0.0),
         1.0,
     ));
+
+    world.components.highlightable[id] = Some(HighlightComponent{color: [0.0, 0.0, 0.0]});
+
     println!("{:#?}", world.components.positionable[id]);
     println!("Entity {} succesffuly loaded", file_path);
+    unsafe {counter += 1.0};
 
     id
 }
@@ -159,11 +165,10 @@ pub fn update_editor(editor: &mut Editor, engine: &mut Engine, world: &mut World
 
 
         if (result.x > 0.0 && result.x < width as f32) && (result.y > 0.0 && result.y < height as f32) {
-            println!("Selected object in inside the view");
+            //TODO(teddy):
         }
 
         //Note(teddy) Draw a quad at that position
-
         handle_world_events(editor, engine, world, event_manager);
         unsafe { draw_transform_guides(&Vector3::new(0.0,0.0,0.0)) };
     }

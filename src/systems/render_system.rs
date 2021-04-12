@@ -1,10 +1,16 @@
 use std::collections::HashMap;
 
+use nalgebra::{Vector3};
+
 use super::system::System;
-use crate::core::{Engine, Event, EventManager};
+use crate::{core::{Engine, Event, EventManager}, game_world::components::TransformComponent};
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::renderer::draw::*;
 
+
+macro_rules! border_shader {
+    () => { String::from("highlight_shader")}
+}
 pub struct Renderer {
     normal_objects: HashMap<EntityID, RenderObject>,
     textured_objects: HashMap<EntityID, RenderObject>,
@@ -31,8 +37,11 @@ impl System for Renderer {
         engine: &mut Engine,
         _delta_time: f32,
     ) {
-        unsafe { gl::ClearColor(0.1, 0.1, 0.1, 1.0) };
-        unsafe { gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT) };
+        unsafe {
+            gl::ClearColor(0.1, 0.1, 0.1, 1.0);
+            gl::ClearStencil(0);
+            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT)
+        };
 
         //Check for new created entities
 
@@ -122,6 +131,15 @@ impl System for Renderer {
                             gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
                             gl::StencilMask(0xFF);
 
+                            let draw_params = || {
+                                // gl::Enable(gl::DEPTH_TEST);
+                                // gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+                                // gl::StencilMask(0xFF);
+                            };
+
+                            gl::Enable(gl::DEPTH_TEST);
+                            gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+                            gl::StencilMask(0xFF);
 
                             draw_normal_object(
                                 &world,
@@ -130,14 +148,47 @@ impl System for Renderer {
                                 render_object,
                                 &transform_component,
                                 &engine.dir_lights,
+                                draw_params
                             )
                             .unwrap();
 
+
+                            let scaled_transform = TransformComponent::new(
+                                transform_component.position.translation.vector,
+                                Vector3::y(), 
+                                1.1,
+                            );
+
+                            //let scaled_shader = &world.resources.shaders[&border_shader!()];
+                            let scaled_params = || {
+                                // gl::StencilFunc(gl::EQUAL, 1, 0xFF);
+                                // gl::StencilMask(0x00);
+                                // gl::Disable(gl::DEPTH_TEST);
+                            };
+
+                            //Drawing scaled version of the object
                             gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
                             gl::StencilMask(0x00);
                             gl::Disable(gl::DEPTH_TEST);
+                            draw_normal_object(
+                                &world,
+                                &border_shader!(),
+                                &engine.camera,
+                                render_object,
+                                &scaled_transform,
+                                &engine.dir_lights,
+                                scaled_params,
+                            )
+                            .unwrap();
 
                         } else {
+
+                            let draw_params = || {
+                                    gl::Enable(gl::CULL_FACE);
+                                    gl::Enable(gl::DEPTH_TEST);
+                                    gl::DepthFunc(gl::LESS);
+                                };
+
                             draw_normal_object(
                                 &world,
                                 &render_component.shader_label,
@@ -145,6 +196,7 @@ impl System for Renderer {
                                 render_object,
                                 &transform_component,
                                 &engine.dir_lights,
+                                draw_params
                             )
                             .unwrap()
                         }
@@ -157,6 +209,10 @@ impl System for Renderer {
 
         unsafe {
             draw_ui(engine);
+
+            gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+            gl::StencilMask(0xFF);
+            gl::Enable(gl::DEPTH_TEST);
         }
     }
 }

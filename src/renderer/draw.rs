@@ -187,14 +187,17 @@ fn process_normal_mesh(obj: &NormalObj) -> (Vec<NormalVertex>, Vec<u32>) {
     (output_vertices, obj.indices.clone())
 }
 
-pub unsafe fn draw_normal_object(
+pub unsafe fn draw_normal_object<T>(
     world: &World,
     shader_label: &String,
     camera: &Camera,
     object: &RenderObject,
     transform: &TransformComponent,
     light: &Light,
-) -> Result<(), DrawError> {
+    draw_params: T
+) -> Result<(), DrawError> 
+    where T: FnOnce()
+{
     let shader = match world.resources.shaders.get(shader_label) {
         Some(id) => *id,
         None => return Err(DrawError::ShaderNotFound),
@@ -202,7 +205,14 @@ pub unsafe fn draw_normal_object(
 
     let view_matrix: Matrix4<f32> = camera.view();
     let perspective_matrix: Matrix4<f32> = camera.perspective();
-    let model_matrix: Matrix4<f32> = transform.position.to_homogeneous();
+    let scale = transform.scale;
+    let scale_matrix = Matrix4::new(
+        scale, 0.0, 0.0, 0.0,
+        0.0, scale, 0.0, 0.0,
+        0.0, 0.0, scale, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+    let model_matrix: Matrix4<f32> = transform.position.to_homogeneous() * scale_matrix;
 
     //TODO(teddy) precompute the transformation matrices then send
 
@@ -242,17 +252,14 @@ pub unsafe fn draw_normal_object(
     );
 
     gl::Uniform3fv(dir_light_location, 1, light.direction.as_ptr());
-
     gl::Uniform3fv(dir_light_color_location, 1, light.color.as_ptr());
 
     //TODO(use objects color)
     let default_color = [0.7, 0.7, 0.7];
     gl::Uniform3fv(object_color_location, 1, default_color.as_ptr());
-
     gl::BindVertexArray(object.vertex_array_object);
-    gl::Enable(gl::CULL_FACE);
-    gl::Enable(gl::DEPTH_TEST);
-    gl::DepthFunc(gl::LESS);
+
+    draw_params();
     gl::DrawElements(
         gl::TRIANGLES,
         object.size_of_elements,

@@ -80,12 +80,14 @@ pub trait ViewContainer: View {
 }
 
 pub struct UITree {
+    ///Keystrokes will be sent this view
+    pub focused_view: Option<Box<dyn View>>,
     pub root: Option<Box<dyn View>>,
 }
 
 impl UITree {
     pub fn new() -> Self {
-        UITree { root: None }
+        UITree { root: None , focused_view: None }
     }
 }
 
@@ -498,6 +500,10 @@ pub fn propagate_button_click(
     }
 
     result
+}
+
+pub fn propagate_key_stroke(engine: *mut Engine, key: glfw::Key) -> bool {
+    unimplemented!()
 }
 
 pub enum Orientation {

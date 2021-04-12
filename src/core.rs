@@ -275,7 +275,7 @@ pub struct Camera {
 impl Camera {
     fn new() -> Self {
         Self {
-            position: Vector3::new(10.0, 100.0, 20.0),
+            position: Vector3::new(0.0, 0.0, 0.0),
             camera_front: Vector3::new(0.0, 0.0, 0.0),
             camera_up: Vector3::new(0.0, 1.0, 0.0),
             first_move: true,

@@ -54,6 +54,15 @@ fn run(display: Display) {
         String::from("frag.glsl"),
         None,
     ));
+
+
+    world.resources.add_resource(AssetSource::Shader(
+        String::from("highlight_shader"),
+        String::from("vert.glsl"),
+        String::from("border_frag.glsl"),
+        None
+    ));
+
     init_ui(&mut engine, &mut world).unwrap();
 
     //TODO(teddy) Issue will happen
@@ -70,6 +79,12 @@ fn run(display: Display) {
     //world.components.(RenderComponent::new())
     let mut frame_time: u128 = 0;
     let mut ticks: u128 = 0;
+
+    unsafe {
+        gl::Enable(gl::STENCIL_TEST);
+        gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
+        gl::StencilOp(gl::KEEP, gl::KEEP, gl::REPLACE);
+    }
 
     while !engine.display.window.should_close() {
         let time = Instant::now();

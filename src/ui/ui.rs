@@ -14,6 +14,15 @@ static mut SHADER_TEXT_ID: u32 = 0;
 pub static mut UI_QUAD_SHADER_ID: u32 = 0;
 static mut ENGINE_PTR: *const Engine = null();
 
+
+macro_rules! font_shader {
+    () => {String::from("font_shader")}
+}
+
+macro_rules! quad_shader {
+    () => {String::from("quad_shader")}
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Dimensions<T> {
     pub x: T,
@@ -435,20 +444,22 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
     }
     engine.ui_frame_buffer = Some(fbo);
 
-    let raw_shader_id = world.resources.add_resource(AssetSource::Shader(
+    let _ = world.resources.add_resource(AssetSource::Shader(
+        font_shader!(),
         String::from("font_vert.glsl"),
         String::from("font_frag.glsl"),
         None,
     ));
 
-    let raw_quad_shader = world.resources.add_resource(AssetSource::Shader(
+    let _ = world.resources.add_resource(AssetSource::Shader(
+        quad_shader!(),
         String::from("ui_quad_vert.glsl"),
         String::from("ui_quad_frag.glsl"),
         None,
     ));
 
-    let shader_id = get_at_index(&world.resources.shaders, raw_shader_id).unwrap();
-    let quad_shader = get_at_index(&world.resources.shaders, raw_quad_shader).unwrap();
+    let shader_id = &world.resources.shaders[&font_shader!()];
+    let quad_shader = &world.resources.shaders[&quad_shader!()];
 
     unsafe {
         SHADER_TEXT_ID = *shader_id;

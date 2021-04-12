@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 use std::ffi::{c_void, CString};
-use std::marker::PhantomData;
 
 use freetype::freetype;
 use glfw::{Action, FlushedMessages, Key, MouseButton, WindowEvent};
-use nalgebra::{Matrix, Matrix4, Point2, Point3, Vector3, Vector4};
+use nalgebra::{Matrix4, Point2, Point3, Vector3, Vector4};
 use ncollide3d::query::Ray;
 
-use crate::game_world::components::HighlightComponent;
 use crate::game_world::world::{EntityID, World, FONT_ASSETS_DIR};
 use crate::gl_bindings::Display;
 use crate::ui::ui::{propagate_button_click, propagate_cursor_pos_to_ui, UITree, View};
@@ -101,7 +99,7 @@ impl Engine {
         unsafe { self.ui_tree.as_ref().unwrap().as_mut() }
     }
 
-    pub fn update(&mut self, world: &mut World, event_manager: &mut EventManager) {
+    pub fn update(&mut self, event_manager: &mut EventManager) {
         let eve_ptr: *mut EventManager = event_manager;
 
         for event in event_manager.window_events.iter() {
@@ -114,15 +112,16 @@ impl Engine {
                 WindowEvent::CursorPos(x, y) => {
                     if !self.cursor_mode_toggle {
                         self.camera.update_look(*x, *y);
+                    } else {
+                        let cords = Cords {
+                            x: *x as f32,
+                            y: *y as f32,
+                        };
+
+                        self.camera.new_cords = cords;
+                        propagate_cursor_pos_to_ui(self, cords)
                     }
 
-                    let cords = Cords {
-                        x: *x as f32,
-                        y: *y as f32,
-                    };
-
-                    self.camera.new_cords = cords;
-                    propagate_cursor_pos_to_ui(self, cords)
                 }
 
                 WindowEvent::MouseButton(button, action, _modifiers) => {
@@ -179,22 +178,8 @@ impl Engine {
                 _ => (),
             }
         }
-
-        self.handle_world_events(world, event_manager);
     }
 
-    fn handle_world_events(&mut self, world: &mut World, event_manager: &EventManager) {
-        for event in event_manager.get_engine_events() {
-            match event {
-                Event::RayCasted(CastedRay { id: _, entity }) if entity.is_some() => {
-                    world.components.highlightable[entity.unwrap()] = Some(HighlightComponent {
-                        color: [0.0, 1.0, 0.0],
-                    });
-                }
-                _ => (),
-            }
-        }
-    }
 }
 
 //Handle user defined events
@@ -268,6 +253,12 @@ enum CameraMovement {
     Right,
 }
 
+#[derive(Debug)]
+pub struct ViewPortDimensions {
+    pub width: i32,
+    pub height: i32
+}
+
 pub struct Camera {
     pub position: Vector3<f32>,
     pub previous_cords: (f32, f32),
@@ -284,8 +275,8 @@ pub struct Camera {
 impl Camera {
     fn new() -> Self {
         Self {
-            position: Vector3::new(10.0, 700.0, 20.0),
-            camera_front: Vector3::new(0.0, 0.0, -1.0),
+            position: Vector3::new(10.0, 100.0, 20.0),
+            camera_front: Vector3::new(0.0, 0.0, 0.0),
             camera_up: Vector3::new(0.0, 1.0, 0.0),
             first_move: true,
             // fov: 0.785398 std::f64::consts::FRAC_PI_4,
@@ -308,7 +299,7 @@ impl Camera {
     }
 
     pub fn view(&self) -> Matrix4<f32> {
-        Matrix4::look_at_rh(
+        Matrix4::look_at_lh(
             &Point3::from(self.position),
             &Point3::from(self.position + self.camera_front),
             &self.camera_up,
@@ -349,31 +340,33 @@ impl Camera {
         self.camera_front = Vector3::new(x_dir, y_dir, z_dir).normalize();
     }
 
-    fn update_position(&mut self, motion: CameraMovement) {
+    fn update_position(&mut self, motion: CameraMovement, speed: Option<f32>) {
         let camera_speed = 2.5;
 
         match motion {
             CameraMovement::Up => {
-                self.position += camera_speed * self.camera_front;
+                self.position -= speed.unwrap_or(camera_speed) * self.camera_front;
             }
 
             CameraMovement::Down => {
-                self.position -= camera_speed * self.camera_front;
+                self.position += speed.unwrap_or(camera_speed) * self.camera_front;
             }
 
             CameraMovement::Left => {
-                self.position -=
-                    camera_speed * self.camera_front.cross(&self.camera_up).normalize();
+                self.position +=
+                    speed.unwrap_or(camera_speed) * self.camera_front.cross(&self.camera_up).normalize();
             }
 
             CameraMovement::Right => {
-                self.position +=
-                    camera_speed * self.camera_front.cross(&self.camera_up).normalize();
+                self.position -=
+                    speed.unwrap_or(camera_speed) * self.camera_front.cross(&self.camera_up).normalize();
             }
         }
     }
 }
 
+
+#[inline]
 fn compute_ray_from_mouse_cords(
     cords: (f32, f32),
     screen_cords: (i32, i32),
@@ -395,6 +388,7 @@ fn compute_ray_from_mouse_cords(
     mapped_direction.xyz().normalize()
 }
 
+
 macro_rules! contains_key {
     ($engine:expr, $key:expr) => {
         $engine.pressed_keys.contains(&$key)
@@ -406,19 +400,19 @@ static mut M_CLICKED: bool = false;
 
 pub fn camera_behaviour(engine: &mut Engine) {
     if contains_key!(engine, Key::W) {
-        engine.camera.update_position(CameraMovement::Up);
+        engine.camera.update_position(CameraMovement::Up, Some(0.05));
     }
 
     if contains_key!(engine, Key::S) {
-        engine.camera.update_position(CameraMovement::Down);
+        engine.camera.update_position(CameraMovement::Down, Some(0.05));
     }
 
     if contains_key!(engine, Key::A) {
-        engine.camera.update_position(CameraMovement::Left);
+        engine.camera.update_position(CameraMovement::Left, Some(0.05));
     }
 
     if contains_key!(engine, Key::D) {
-        engine.camera.update_position(CameraMovement::Right);
+        engine.camera.update_position(CameraMovement::Right, Some(0.05));
     }
 
     unsafe {

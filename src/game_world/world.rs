@@ -1,6 +1,7 @@
-use std::collections::LinkedList;
+use std::collections::{HashMap, LinkedList};
 use std::fs::File;
 use std::io::BufReader;
+
 
 use nalgebra::Vector3;
 use nphysics3d::material::{BasicMaterial, MaterialHandle};
@@ -35,14 +36,16 @@ pub enum ObjType {
 
 pub enum AssetSource {
     Mesh(ObjType, String),
-    Shader(String, String, Option<String>),
+
+    /// Name of shader, Vert, Frag, Option<Geo>
+    Shader(String, String, String, Option<String>),
     Texture(String),
 }
 
 //Render component will hold the mesh id and a copy of the mesh's vertex data
 pub struct Resources {
     pub mesh_data: Vec<MeshType>,
-    pub shaders: LinkedList<u32>,
+    pub shaders: HashMap<String, u32>,
 }
 
 impl Resources {
@@ -50,11 +53,11 @@ impl Resources {
         //Note(ted) Loading and compiling the shaders
         Self {
             mesh_data: vec![],
-            shaders: LinkedList::new(),
+            shaders: HashMap::new(),
         }
     }
 
-    pub fn add_resource(&mut self, resource: AssetSource) -> usize {
+    pub fn add_resource(&mut self, resource: AssetSource) -> Option<usize> {
         match resource {
             AssetSource::Mesh(obj_type, location) => match obj_type {
                 ObjType::Normal => {
@@ -64,13 +67,13 @@ impl Resources {
                     let id = self.mesh_data.len();
                     self.mesh_data.push(MeshType::Normal(mesh));
 
-                    id
+                    Some(id)
                 }
 
-                ObjType::Textured => 0,
+                ObjType::Textured => Some(0),
             },
 
-            AssetSource::Shader(vertex, fragment, geo) => {
+            AssetSource::Shader(name, vertex, fragment, geo) => {
                 //TODO(teddy) Handle this error gracefully
                 let geometry_shader = match geo {
                     Some(source) => Some(format!("{}{}", SHADER_ASSETS_DIR, source)),
@@ -85,13 +88,11 @@ impl Resources {
                     )
                     .unwrap()
                 };
-                let id = self.shaders.len();
-                self.shaders.push_back(shader);
-
-                id as usize
+                self.shaders.insert(name,shader);
+                None
             }
 
-            AssetSource::Texture(_) => 0,
+            AssetSource::Texture(_) => Some(0),
         }
     }
 }
@@ -141,9 +142,17 @@ impl World {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct ShaderObject {
+    name: String,
+    vert: String,
+    frag: String,
+    geo: Option<String>
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Level {
     entities: Vec<Entity>,
-    shader_programs: Vec<[String; 3]>,
+    shader_programs: Vec<ShaderObject>,
     meshes: Vec<(ObjType, String)>,
     font_shader: [String; 3],
 }
@@ -183,7 +192,7 @@ struct PhysicsData {
 struct RenderData {
     textures: Vec<String>,
     mesh: usize,
-    shader: usize,
+    shader: String,
 }
 
 pub enum WorldError {
@@ -213,16 +222,12 @@ pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
 
     let world_ref = unsafe { &mut *world };
     for shader in level.shader_programs {
-        let geo = if shader[2].is_empty() {
-            None
-        } else {
-            Some(shader[2].clone())
-        };
 
         world_ref.resources.add_resource(AssetSource::Shader(
-            shader[0].clone(),
-            shader[1].clone(),
-            geo,
+            shader.name,
+            shader.vert.clone(),
+            shader.vert.clone(),
+            shader.geo.clone(),
         ));
     }
 
@@ -281,7 +286,7 @@ pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
         //Hello world
         world_ref.components.renderables[id] = Some(RenderComponent::new(
             entity.render.mesh,
-            entity.render.shader,
+            entity.render.shader.clone(),
         ));
     }
 

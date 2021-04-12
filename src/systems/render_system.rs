@@ -32,7 +32,7 @@ impl System for Renderer {
         _delta_time: f32,
     ) {
         unsafe { gl::ClearColor(0.1, 0.1, 0.1, 1.0) };
-        unsafe { gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT) };
+        unsafe { gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT) };
 
         //Check for new created entities
 
@@ -117,16 +117,37 @@ impl System for Renderer {
                     };
 
                     unsafe {
-                        draw_normal_object(
-                            &world,
-                            render_component.shader_id,
-                            &engine.camera,
-                            render_object,
-                            &transform_component,
-                            &engine.dir_lights,
-                            &world.components.highlightable[*i],
-                        )
-                        .unwrap()
+                        if let Some(higlight_component) = &world.components.highlightable[*i] {
+
+                            gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+                            gl::StencilMask(0xFF);
+
+
+                            draw_normal_object(
+                                &world,
+                                &render_component.shader_label,
+                                &engine.camera,
+                                render_object,
+                                &transform_component,
+                                &engine.dir_lights,
+                            )
+                            .unwrap();
+
+                            gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
+                            gl::StencilMask(0x00);
+                            gl::Disable(gl::DEPTH_TEST);
+
+                        } else {
+                            draw_normal_object(
+                                &world,
+                                &render_component.shader_label,
+                                &engine.camera,
+                                render_object,
+                                &transform_component,
+                                &engine.dir_lights,
+                            )
+                            .unwrap()
+                        }
                     };
                 }
             }

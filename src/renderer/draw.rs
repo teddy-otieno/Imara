@@ -142,10 +142,7 @@ fn process_textured_mesh(obj: &TexturedObj) -> (Vec<TexturedVertex>, Vec<u32>) {
         z: point.z,
     };
 
-    assert!(
-        obj.vertices.len() == obj.normals.len() && obj.vertices.len() == obj.text_cords.len(),
-        true
-    );
+    assert!( obj.vertices.len() == obj.normals.len() && obj.vertices.len() == obj.text_cords.len(), true);
 
     let mut output_vertices = vec![];
 
@@ -192,14 +189,13 @@ fn process_normal_mesh(obj: &NormalObj) -> (Vec<NormalVertex>, Vec<u32>) {
 
 pub unsafe fn draw_normal_object(
     world: &World,
-    shader_id: usize,
+    shader_label: &String,
     camera: &Camera,
     object: &RenderObject,
     transform: &TransformComponent,
     light: &Light,
-    hightlighted: &Option<HighlightComponent>,
 ) -> Result<(), DrawError> {
-    let shader = match get_at_index(&world.resources.shaders, shader_id) {
+    let shader = match world.resources.shaders.get(shader_label) {
         Some(id) => *id,
         None => return Err(DrawError::ShaderNotFound),
     };
@@ -249,12 +245,9 @@ pub unsafe fn draw_normal_object(
 
     gl::Uniform3fv(dir_light_color_location, 1, light.color.as_ptr());
 
-    if let Some(highlight) = hightlighted {
-        gl::Uniform3fv(object_color_location, 1, highlight.color.as_ptr());
-    } else {
-        let default_color = [0.7, 0.7, 0.7];
-        gl::Uniform3fv(object_color_location, 1, default_color.as_ptr());
-    }
+    //TODO(use objects color)
+    let default_color = [0.7, 0.7, 0.7];
+    gl::Uniform3fv(object_color_location, 1, default_color.as_ptr());
 
     gl::BindVertexArray(object.vertex_array_object);
     gl::Enable(gl::CULL_FACE);

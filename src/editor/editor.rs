@@ -1,9 +1,11 @@
 use std::fs;
 
-use nalgebra::Vector3;
+use nalgebra::{Vector3, Matrix4, Point3};
 
-use crate::game_world::components::{RenderComponent, TransformComponent};
+use crate::utils::{compute_world_space_to_screen_space};
+use crate::game_world::components::{RenderComponent, TransformComponent, HighlightComponent};
 use crate::game_world::world::World;
+use crate::core::{Engine, Event, ViewPortDimensions, EventManager, CastRayDat, CastedRay};
 use crate::game_world::world::{AssetSource, ObjType};
 use crate::ui::ui::{
     Orientation, SimpleUIContainer, TextView, UITree, ViewContainer, ViewPosition,
@@ -11,18 +13,20 @@ use crate::ui::ui::{
 
 pub struct Editor {
     pub ui_tree: UITree,
-    pub shader_id: usize,
+    pub shader_label: String,
+    pub selected_entity: Option<usize>,
 }
 
 impl Editor {
-    pub fn new(shader_id: usize) -> Self {
+    pub fn new(shader_label: String) -> Self {
         Self {
             ui_tree: UITree::new(),
-            shader_id,
+            shader_label,
+            selected_entity: None,
         }
     }
 
-    pub fn init_editor_ui(&mut self, world: &mut World) {
+    pub fn init_editor_ui(&mut self, engine: &mut Engine, world: &mut World) {
         let simpe_container_position = Some(ViewPosition::new(0, 0));
         let mut simple_container = Box::new(SimpleUIContainer::new(
             String::from("simple_container").into_boxed_str(),
@@ -77,10 +81,17 @@ impl Editor {
                 view_ref.background_color = [0.2, 0.2, 0.2];
             }));
 
-            let shader = self.shader_id;
+            let shader = self.shader_label.clone();
             let world_ptr: *mut World = world;
+            let engine_ptr: *mut Engine = engine;
+            let self_ptr: *mut Self = self;
+
             asset_name_text_view.on_click = Some(Box::new(move |view: *mut TextView| {
-                create_entity(world_ptr, name.clone(), shader);
+
+                let self_ref = unsafe {self_ptr.as_mut().unwrap()};
+                //Move the camera closer to the entity
+                let id = create_entity(world_ptr, engine_ptr, name.clone(), shader.clone());
+                self_ref.selected_entity = Some(id);
             }));
 
             simple_container.add_child(asset_name_text_view)
@@ -90,8 +101,9 @@ impl Editor {
     }
 }
 
-fn create_entity(world_ptr: *mut World, file_path: String, shader_id: usize) {
+fn create_entity(world_ptr: *mut World, engine_ptr: *mut Engine, file_path: String, shader_label: String) -> usize {
     let world = unsafe { world_ptr.as_mut().unwrap() };
+    let engine = unsafe { engine_ptr.as_mut().unwrap() };
 
     let id = world.create_entity();
 
@@ -101,14 +113,16 @@ fn create_entity(world_ptr: *mut World, file_path: String, shader_id: usize) {
         String::from(words[words.len() - 1]),
     ));
 
-    world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_id));
+    world.components.renderables[id] = Some(RenderComponent::new(mesh_id.unwrap(), shader_label));
     world.components.positionable[id] = Some(TransformComponent::new(
-        Vector3::new(0.0, -5.0, 0.0),
+        Vector3::new(0.0, -50.0, 0.0),
         Vector3::new(0.0, 1.0, 0.0),
         1.0,
     ));
-
+    println!("{:#?}", world.components.positionable[id]);
     println!("Entity {} succesffuly loaded", file_path);
+
+    id
 }
 
 fn load_list_of_obj_assets() -> Vec<String> {
@@ -122,4 +136,52 @@ fn load_list_of_obj_assets() -> Vec<String> {
     output
 }
 
-pub fn update_editor(_editor: &mut Editor, _world: &mut World) {}
+pub fn update_editor(editor: &mut Editor, engine: &mut Engine, world: &mut World, event_manager: &EventManager) {
+
+    //TODO(teddy) 
+    //1. get the selected_entity and add higlight component
+    //
+
+    if let Some(id) = editor.selected_entity {
+        let component = world.components.positionable[id].as_ref().unwrap();
+
+        let camera = &engine.camera;
+        let (width, height) = camera.view_port;
+
+
+        //TODO(Teddy) fix tomorrow
+        let result = compute_world_space_to_screen_space(
+            ViewPortDimensions{width, height}, 
+            &component.position.translation.vector, 
+            &camera.view(),
+            &camera.perspective()
+            );
+
+
+        if (result.x > 0.0 && result.x < width as f32) && (result.y > 0.0 && result.y < height as f32) {
+            println!("Selected object in inside the view");
+        }
+
+        //Note(teddy) Draw a quad at that position
+
+        handle_world_events(editor, engine, world, event_manager);
+        unsafe { draw_transform_guides(&Vector3::new(0.0,0.0,0.0)) };
+    }
+}
+
+fn handle_world_events(editor: &mut Editor, engine: &Engine, world: &mut World, event_manager: &EventManager) {
+    for event in event_manager.get_engine_events() {
+        match event {
+            Event::RayCasted(CastedRay { id: _, entity }) if entity.is_some() => {
+                world.components.highlightable[entity.unwrap()] = Some(HighlightComponent {
+                    color: [0.0, 1.0, 0.0],
+                });
+            }
+            _ => (),
+        }
+    }
+}
+
+unsafe fn draw_transform_guides(position: &Vector3<f32>) {
+
+}

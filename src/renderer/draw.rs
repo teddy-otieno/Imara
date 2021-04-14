@@ -13,6 +13,7 @@ use crate::utils::get_at_index;
 #[derive(Debug)]
 pub enum DrawError {
     ShaderNotFound,
+    ShaderNotAvailable
 }
 
 #[repr(C)]
@@ -198,8 +199,18 @@ pub unsafe fn draw_normal_object<T>(
 ) -> Result<(), DrawError> 
     where T: FnOnce()
 {
-    let shader = match world.resources.shaders.get(shader_label) {
-        Some(id) => *id,
+
+    let resources = world.resources.shaders.read().unwrap();
+
+    let shader = match resources.get(shader_label) {
+        Some(id) => {
+            if let Some(shader_id) = id {
+                *shader_id
+            } else {
+                //Shader is not available skip
+                return Err(DrawError::ShaderNotAvailable);
+            }
+        },
         None => return Err(DrawError::ShaderNotFound),
     };
 

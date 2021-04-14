@@ -10,7 +10,7 @@ use nphysics3d::object::{
 use nphysics3d::world::{DefaultGeometricalWorld, DefaultMechanicalWorld};
 
 use super::system::System;
-use crate::core::{CastedRay, Engine, Event, EventManager};
+use crate::core::{CastedRay, Engine, Event, EventType, EventManager};
 use crate::game_world::world::{MeshType, World};
 
 pub struct Physics {
@@ -65,15 +65,22 @@ impl Physics {
     }
 
     #[inline]
-    fn handle_world_events(&mut self, world: &mut World, event_manager: *mut EventManager) {
-        for event in unsafe { &*event_manager }.get_engine_events() {
-            match event {
-                Event::EntityCreated(id) => {
-                    let physics_component = match world.components.physics[*id].as_mut() {
+    fn handle_world_events(&mut self, engine: &mut Engine, world: &mut World, event_manager: *mut EventManager) -> Result<(),()> {
+
+        let mesh_data = match world.resources.mesh_data.try_read() {
+            Ok(dat) => dat,
+            Err(_) => return Err(())
+        };
+
+        for event in unsafe { &mut *event_manager }.get_engine_events() {
+            //TODO(teddy) Integrate with pending events
+            match event.event_type {
+                EventType::EntityCreated(id) => {
+                    let physics_component = match world.components.physics[id].as_mut() {
                         Some(component) => component,
                         None => continue,
                     };
-                    let transform_component = match world.components.positionable[*id].as_ref() {
+                    let transform_component = match world.components.positionable[id].as_ref() {
                         Some(component) => component,
                         None => continue,
                     };
@@ -89,34 +96,45 @@ impl Physics {
                     let rigid_body_handle = self.bodies.insert(rigid_body);
                     physics_component.rigid_handle = Some(rigid_body_handle);
 
-                    let shape = {
-                        if let Some(render_component) = &world.components.renderables[*id] {
+                    let shape = if let Some(render_component) = &world.components.renderables[id] {
                             // construct a trimesh
                             let mesh_id = render_component.mesh_id;
 
-                            let trimesh = match &world.resources.mesh_data[mesh_id] {
-                                MeshType::Normal(obj) => {
-                                    let mut indices = vec![];
+                            //We only process already loaded mesh data
+                            //When the data is not loaded i.e. `None` we append the event to pending events and Skip
+                            if let Some(mesh) = &mesh_data[mesh_id] {
 
-                                    divide_indices(obj.indices.clone(), &mut indices);
-                                    TriMesh::new(
-                                        obj.vertices.iter().map(|p| p.xyz()).collect(),
-                                        indices,
-                                        None,
-                                    )
+                                let trimesh = match mesh {
+
+                                    MeshType::Normal(obj) => {
+                                        let mut indices = vec![];
+
+                                        divide_indices(obj.indices.clone(), &mut indices);
+                                        TriMesh::new(
+                                            obj.vertices.iter().map(|p| p.xyz()).collect(),
+                                            indices,
+                                            None,
+                                        )
+                                    }
+
+                                    MeshType::Textured(_obj) => {
+                                        unimplemented!();
+                                    }
+                                };
+                                ShapeHandle::new(trimesh)
+                            } else {
+
+                                if !event.is_pending {
+                                    unsafe {&mut (*event_manager).add_pending(event) };
                                 }
 
-                                MeshType::Textured(_obj) => {
-                                    unimplemented!();
-                                }
-                            };
+                                continue;
+                            }
 
-                            ShapeHandle::new(trimesh)
                         } else {
                             //Construct a ball, this entity could be a sensor
 
                             ShapeHandle::new(Ball::new(1.5))
-                        }
                     };
 
                     let collider_body = ColliderDesc::new(shape)
@@ -131,9 +149,9 @@ impl Physics {
                     physics_component.collider_handle = Some(collider_handle);
                 }
 
-                Event::EntityRemoved(_id) => {}
+                EventType::EntityRemoved(_id) => {}
 
-                Event::CastRay(data) => {
+                EventType::CastRay(data) => {
                     let collider_groups = CollisionGroups::new();
                     let interferences = self.geometrical_world.interferences_with_ray(
                         &self.colliders,
@@ -170,11 +188,12 @@ impl Physics {
                         }
                     }
                     unsafe { &mut *event_manager }
-                        .add_engine_event(Event::RayCasted(ray_casted_event));
+                        .add_engine_event(Event::new(EventType::RayCasted(ray_casted_event)));
                 }
                 _ => (),
-            }
+            };
         }
+        Ok(())
     }
 }
 
@@ -187,10 +206,10 @@ impl System for Physics {
         &mut self,
         world: &mut World,
         event_manager: &mut EventManager,
-        _engine: &mut Engine,
+        engine: &mut Engine,
         _delta_time: f32,
     ) {
-        self.handle_world_events(world, event_manager);
+        self.handle_world_events(engine, world, event_manager);
 
         self.mechanical_world.step(
             &mut self.geometrical_world,

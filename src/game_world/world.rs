@@ -1,7 +1,8 @@
 use std::collections::{HashMap, LinkedList};
 use std::fs::File;
 use std::io::BufReader;
-
+use std::sync::{RwLock, Arc};
+use std::thread;
 
 use nalgebra::Vector3;
 use nphysics3d::material::{BasicMaterial, MaterialHandle};
@@ -9,8 +10,7 @@ use nphysics3d::object::BodyStatus;
 use serde::{Deserialize, Serialize};
 
 use super::components::*;
-use crate::core::Event;
-use crate::core::EventManager;
+use crate::core::{Event, EventManager, EventType};
 use crate::obj_parser::{load_obj, NormalObj, TexturedObj};
 use crate::renderer::shaders::create_shader;
 
@@ -42,57 +42,115 @@ pub enum AssetSource {
     Texture(String),
 }
 
+
+///Enum used by add resource function
+#[derive(Debug)]
+pub enum ResourceResult {
+    Mesh(usize),
+    Shader(String),
+    Texture(String)
+}
+
+
+type MeshDataContainer = Vec<Option<MeshType>>;
+type ShaderContainer = HashMap<String, Option<u32>>;
 //Render component will hold the mesh id and a copy of the mesh's vertex data
 pub struct Resources {
-    pub mesh_data: Vec<MeshType>,
-    pub shaders: HashMap<String, u32>,
+    pub mesh_data: Arc<RwLock<MeshDataContainer>>,
+    pub shaders: Arc<RwLock<ShaderContainer>>,
 }
 
 impl Resources {
     pub fn new() -> Self {
         //Note(ted) Loading and compiling the shaders
         Self {
-            mesh_data: vec![],
-            shaders: HashMap::new(),
+            mesh_data: Arc::new(RwLock::new(vec![])),
+            shaders: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub fn add_resource(&mut self, resource: AssetSource) -> Option<usize> {
+    ///Threaded signal that the value is required immediately
+    pub fn add_resource(&mut self, resource: AssetSource, threaded: bool) -> ResourceResult {
+
+        //TODO(teddy) Spawn a thread to load the resources
+
+        let mesh_shrd_ref = Arc::clone(&self.mesh_data);
+        let shader_shrd_ref = Arc::clone(&self.shaders);
+
         match resource {
             AssetSource::Mesh(obj_type, location) => match obj_type {
                 ObjType::Normal => {
-                    let mesh =
-                        load_obj::<NormalObj>(format!("{}{}", OBJ_ASSETS_DIR, location).as_str())
-                            .unwrap();
-                    let id = self.mesh_data.len();
-                    self.mesh_data.push(MeshType::Normal(mesh));
 
-                    Some(id)
+                    let mut new_id = 0;
+                    {
+                        let mut mesh_container = mesh_shrd_ref.write().unwrap();
+                        new_id = mesh_container.len();
+
+                        mesh_container.push(None);
+
+                    }
+
+                    let load_mesh_routine = move || {
+                            let mesh : NormalObj = load_obj(
+                                format!("{}{}", OBJ_ASSETS_DIR, location).as_str()
+                            ).unwrap();
+
+                            let mut mesh_container = mesh_shrd_ref.write().unwrap();
+                            mesh_container[new_id] = Some(MeshType::Normal(mesh));
+                            drop(mesh_container);
+                    };
+
+                    if threaded {
+                        thread::spawn(load_mesh_routine);
+                    } else {
+                        load_mesh_routine();
+                    }
+
+                    ResourceResult::Mesh(new_id)
                 }
 
-                ObjType::Textured => Some(0),
+                ObjType::Textured => ResourceResult::Mesh(0),
             },
 
             AssetSource::Shader(name, vertex, fragment, geo) => {
-                //TODO(teddy) Handle this error gracefully
-                let geometry_shader = match geo {
-                    Some(source) => Some(format!("{}{}", SHADER_ASSETS_DIR, source)),
-                    None => None,
+
+                let copy_for_result = name.clone();
+                {
+                    let mut shader_container = shader_shrd_ref.write().unwrap();
+                    shader_container.insert(name.clone(), None);
+                }
+
+                let load_and_compile_shader_routine = move || {
+                    //TODO(teddy) Handle this error gracefully
+                    let geometry_shader = match geo {
+                        Some(source) => Some(format!("{}{}", SHADER_ASSETS_DIR, source)),
+                        None => None,
+                    };
+
+                    let shader = unsafe {
+                        create_shader(
+                            format!("{}{}", SHADER_ASSETS_DIR, vertex),
+                            format!("{}{}", SHADER_ASSETS_DIR, fragment),
+                            geometry_shader,
+                        )
+                        .unwrap()
+                    };
+
+                    let mut shader_container = shader_shrd_ref.write().unwrap();
+                    shader_container.insert(name.clone(), Some(shader));
                 };
 
-                let shader = unsafe {
-                    create_shader(
-                        format!("{}{}", SHADER_ASSETS_DIR, vertex),
-                        format!("{}{}", SHADER_ASSETS_DIR, fragment),
-                        geometry_shader,
-                    )
-                    .unwrap()
-                };
-                self.shaders.insert(name,shader);
-                None
+
+                if threaded {
+                    thread::spawn(load_and_compile_shader_routine);
+                } else {
+                    load_and_compile_shader_routine();
+                }
+
+                ResourceResult::Shader(copy_for_result)
             }
 
-            AssetSource::Texture(_) => Some(0),
+            AssetSource::Texture(_) => ResourceResult::Texture(String::new()),
         }
     }
 }
@@ -136,7 +194,7 @@ impl World {
         };
 
         let event_manager = unsafe { self.event_manager.as_mut().unwrap() };
-        event_manager.add_event(Event::EntityCreated(id));
+        event_manager.add_event(Event::new(EventType::EntityCreated(id)));
         id
     }
 }
@@ -228,13 +286,13 @@ pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
             shader.vert.clone(),
             shader.vert.clone(),
             shader.geo.clone(),
-        ));
+        ), true);
     }
 
     for (obj_type, source) in level.meshes {
         world_ref
             .resources
-            .add_resource(AssetSource::Mesh(obj_type, source));
+            .add_resource(AssetSource::Mesh(obj_type, source), true);
     }
 
     for entity in level.entities.iter() {

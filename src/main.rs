@@ -7,6 +7,7 @@ extern crate memoffset;
 extern crate freetype;
 extern crate serde_json;
 
+#[macro_use]
 mod core;
 mod editor;
 mod game_world;
@@ -53,7 +54,7 @@ fn run(display: Display) {
         String::from("vert.glsl"),
         String::from("frag.glsl"),
         None,
-    ));
+    ), false);
 
 
     world.resources.add_resource(AssetSource::Shader(
@@ -61,7 +62,7 @@ fn run(display: Display) {
         String::from("vert.glsl"),
         String::from("border_frag.glsl"),
         None
-    ));
+    ), false);
 
     init_ui(&mut engine, &mut world).unwrap();
 

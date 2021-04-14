@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::ffi::{c_void, CString};
 
 use freetype::freetype;
@@ -11,21 +12,62 @@ use crate::gl_bindings::Display;
 use crate::ui::ui::{propagate_button_click, propagate_cursor_pos_to_ui, UITree, View};
 use crate::utils::Cords;
 
-#[derive(Debug)]
-pub enum Event {
+#[derive(Debug, Clone)]
+pub enum EventType {
     EntityCreated(EntityID),
     EntityRemoved(EntityID),
     CastRay(CastRayDat),
     RayCasted(CastedRay),
 }
 
-#[derive(Debug)]
+///Some events will be locked to routine running in a seperate thread like loading assets.
+///This wrapper struct will be used to mark events that are pending executions so that systems
+///will be aware of their presence as they update the game states
+
+static mut EVENT_IDS: u64 = 0;
+#[derive(Debug, Clone)]
+pub struct Event {
+    pub id: u64,
+    pub is_pending: bool,
+    pub event_type: EventType,
+}
+
+
+impl PartialEq for Event {
+    fn eq(&self, other: &Self) -> bool{
+        self.id == other.id
+    }
+}
+
+impl Hash for Event {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl Eq for Event {}
+
+impl Event {
+    pub fn new(event: EventType) -> Self {
+        Self {
+            is_pending: false,
+            id: unsafe {
+                let temp = EVENT_IDS;
+                EVENT_IDS  += 1;
+                temp
+            },
+            event_type: event
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct CastRayDat {
     pub id: usize,
     pub ray: Ray<f32>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CastedRay {
     pub id: usize,
     pub entity: Option<EntityID>,
@@ -36,6 +78,18 @@ pub struct CastedRay {
 pub struct Light {
     pub color: [f32; 3],
     pub direction: [f32; 3],
+}
+
+#[inline(always)]
+pub fn mouse_clicked(engine: &Engine, button: &MouseButton) -> bool {
+    let result = engine.mouse_button_keys
+        .iter()
+        .find(|b| { *button == **b });
+
+    match result {
+        Some(_) => true,
+        None => false
+    }
 }
 
 pub struct Engine {
@@ -126,16 +180,13 @@ impl Engine {
 
                 WindowEvent::MouseButton(button, action, _modifiers) => {
                     //Note(teddy) This event was not handled in UI meaning button click wasn't in a ui element
-                    //
 
-                    println!("{:?}", self.mouse_button_keys);
                     match button {
                         MouseButton::Button1 => {
                             check_button(button, action, &mut self.mouse_button_keys);
                         }
 
                         MouseButton::Button2 => {
-                            //println!("{:?}", self.mouse_button_keys);
                             check_button(button, action, &mut self.mouse_button_keys);
                         }
 
@@ -161,9 +212,10 @@ impl Engine {
                         dbg!(&self.camera.camera_front);
                         let ray = Ray::new(Point3::from(self.camera.position), direction);
 
-                        unsafe {
-                            (*eve_ptr).add_engine_event(Event::CastRay(CastRayDat { id: 0, ray }));
-                        }
+                        let ray_cast_event = Event::new(EventType::CastRay(CastRayDat { id: 0, ray }));
+
+                        dbg!(&ray_cast_event);
+                        unsafe { (*eve_ptr).add_engine_event(ray_cast_event); }
                     }
                 }
 
@@ -190,6 +242,8 @@ pub struct EventManager {
     which_buff: bool,
     engine_events: Vec<Event>,
     engine_events1: Vec<Event>,
+
+    pending_events: HashSet<Event>
 }
 
 impl EventManager {
@@ -198,6 +252,7 @@ impl EventManager {
             window_events: vec![],
             engine_events: vec![],
             engine_events1: vec![],
+            pending_events: HashSet::new(),
             which_buff: true,
         }
     }
@@ -225,12 +280,43 @@ impl EventManager {
         }
     }
 
-    pub fn get_engine_events(&self) -> &Vec<Event> {
+    pub fn get_engine_events(&mut self) -> Vec<Event> {
+        //Note(teddy) Add pending events
+
         if self.which_buff {
-            &self.engine_events
+
+            let mut temp = self.engine_events.clone();
+            let event_array = self.pending_events
+                .iter()
+                .map(|x| x.clone())
+                .collect::<Vec<Event>>();
+            temp.extend_from_slice(event_array.as_slice());
+            temp
+
         } else {
-            &self.engine_events1
+            let mut temp = self.engine_events1.clone();
+            let event_array = self.pending_events
+                .iter()
+                .map(|x| x.clone())
+                .collect::<Vec<Event>>();
+
+            temp.extend_from_slice(event_array.as_slice());
+            temp
         }
+    }
+
+    //Note(teddy)
+    //Issue will arising when the lock is held for too long.
+    //We can timestamp the events and cancel events that have lived for a period of time
+    //to ensure program correctness
+    pub fn add_pending(&mut self, mut event: Event) {
+        event.is_pending = true;
+
+        self.pending_events.insert(event);
+    }
+
+    pub fn remove_pending(&mut self, event: &Event) {
+        self.pending_events.remove(event);
     }
 
     pub fn clear(&mut self) {

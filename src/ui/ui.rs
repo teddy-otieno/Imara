@@ -451,17 +451,19 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
         String::from("font_vert.glsl"),
         String::from("font_frag.glsl"),
         None,
-    ));
+    ), false);
 
     let _ = world.resources.add_resource(AssetSource::Shader(
         quad_shader!(),
         String::from("ui_quad_vert.glsl"),
         String::from("ui_quad_frag.glsl"),
         None,
-    ));
+    ), false);
 
-    let shader_id = &world.resources.shaders[&font_shader!()];
-    let quad_shader = &world.resources.shaders[&quad_shader!()];
+    let shader_container_ref = world.resources.shaders.read().unwrap();
+
+    let shader_id = &shader_container_ref[&font_shader!()].unwrap();
+    let quad_shader = &shader_container_ref[&quad_shader!()].unwrap();
 
     unsafe {
         SHADER_TEXT_ID = *shader_id;
@@ -499,7 +501,8 @@ pub fn propagate_button_click(
         result = view.handle_button_click(ref_for_view, button, cords);
     }
 
-    result
+    // result
+    false
 }
 
 pub fn propagate_key_stroke(engine: *mut Engine, key: glfw::Key) -> bool {

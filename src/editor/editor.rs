@@ -1,11 +1,14 @@
 use std::fs;
 
+use glfw::MouseButton;
 use nalgebra::{Vector3, Matrix4, Point3};
+use nphysics3d::material::{MaterialHandle, BasicMaterial};
+use nphysics3d::object::{BodyStatus, DefaultBodyHandle, DefaultColliderHandle};
 
 use crate::utils::{compute_world_space_to_screen_space};
-use crate::game_world::components::{RenderComponent, TransformComponent, HighlightComponent};
-use crate::game_world::world::World;
-use crate::core::{Engine, Event, ViewPortDimensions, EventManager, CastRayDat, CastedRay};
+use crate::game_world::components::*;
+use crate::game_world::world::{World, ResourceResult};
+use crate::core::{Engine, Event, ViewPortDimensions, EventManager, EventType, CastRayDat, CastedRay, mouse_clicked};
 use crate::game_world::world::{AssetSource, ObjType};
 use crate::ui::ui::{
     Orientation, SimpleUIContainer, TextView, UITree, ViewContainer, ViewPosition,
@@ -110,19 +113,26 @@ fn create_entity(world_ptr: *mut World, engine_ptr: *mut Engine, file_path: Stri
     let id = world.create_entity();
 
     let words: Vec<&str> = file_path.split("\\").collect();
-    let mesh_id = world.resources.add_resource(AssetSource::Mesh(
-        ObjType::Normal,
-        String::from(words[words.len() - 1]),
-    ));
+    let mesh_id = match world.resources.add_resource(AssetSource::Mesh( ObjType::Normal, String::from(words[words.len() - 1]),), true) {
+        ResourceResult::Mesh(id) => id,
+        _ => unreachable!()
+    };
 
-    world.components.renderables[id] = Some(RenderComponent::new(mesh_id.unwrap(), shader_label));
+    world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_label));
     world.components.positionable[id] = Some(TransformComponent::new(
         Vector3::new(0.0 + (5.0 * unsafe {counter}), 0.0, 10.0),
         Vector3::new(0.0, 1.0, 0.0),
         1.0,
     ));
 
-    world.components.highlightable[id] = Some(HighlightComponent{color: [0.0, 0.0, 0.0]});
+    world.components.physics[id] = Some(PhysicsComponent::new(
+        1.0,
+        false,
+        BodyStatus::Static,
+        Vector3::new(0.0, 0.0, 0.0),
+        MaterialHandle::new(BasicMaterial::new(0.3, 0.8))
+    ));
+    // world.components.highlightable[id] = Some(HighlightComponent{color: [0.0, 0.0, 0.0]});
 
     println!("{:#?}", world.components.positionable[id]);
     println!("Entity {} succesffuly loaded", file_path);
@@ -142,11 +152,15 @@ fn load_list_of_obj_assets() -> Vec<String> {
     output
 }
 
-pub fn update_editor(editor: &mut Editor, engine: &mut Engine, world: &mut World, event_manager: &EventManager) {
+pub fn update_editor(editor: &mut Editor, engine: &mut Engine, world: &mut World, event_manager: &mut EventManager) {
 
     //TODO(teddy) 
     //1. get the selected_entity and add higlight component
     //
+
+    if mouse_clicked(engine, &MouseButton::Button3){
+        println!("Button event captured");
+    }
 
     if let Some(id) = editor.selected_entity {
         let component = world.components.positionable[id].as_ref().unwrap();
@@ -174,10 +188,10 @@ pub fn update_editor(editor: &mut Editor, engine: &mut Engine, world: &mut World
     }
 }
 
-fn handle_world_events(editor: &mut Editor, engine: &Engine, world: &mut World, event_manager: &EventManager) {
+fn handle_world_events(editor: &mut Editor, engine: &Engine, world: &mut World, event_manager: &mut EventManager) {
     for event in event_manager.get_engine_events() {
-        match event {
-            Event::RayCasted(CastedRay { id: _, entity }) if entity.is_some() => {
+        match event.event_type {
+            EventType::RayCasted(CastedRay { id: _, entity }) if entity.is_some() => {
                 world.components.highlightable[entity.unwrap()] = Some(HighlightComponent {
                     color: [0.0, 1.0, 0.0],
                 });

@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use nalgebra::{Vector3};
 
 use super::system::System;
-use crate::{core::{Engine, Event, EventManager}, game_world::components::TransformComponent};
+use crate::core::{Engine, Event, EventManager, EventType};
+use crate::game_world::components::TransformComponent;
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::renderer::draw::*;
 
@@ -46,57 +47,103 @@ impl System for Renderer {
         //Check for new created entities
 
         // dbg!(&event_manager.get_engine_events());
-        for event in event_manager.get_engine_events().iter() {
-            match event {
-                Event::EntityCreated(id) => {
-                    let render_component = match world.components.renderables[*id].as_ref() {
+        for event in event_manager.get_engine_events().clone().into_iter() {
+            match event.event_type {
+                EventType::EntityCreated(id) => {
+                    let render_component = match world.components.renderables[id].as_ref() {
                         Some(comp) => comp,
                         None => continue,
                     };
 
                     let mesh_id = render_component.mesh_id;
 
-                    if let Some(mesh) = world.resources.mesh_data.get(mesh_id) {
-                        match mesh {
-                            MeshType::Textured(obj) => {
-                                let _render_object = unsafe { init_textured_object(&obj) };
-                            }
+                    let mesh_data = match world.resources.mesh_data.try_read()  {
+                        Ok(mesh_container) => {
 
-                            MeshType::Normal(obj) => {
-                                let render_object = unsafe { init_normal_object(&obj) };
-
-                                if let Some(_) = self.normal_objects.insert(*id, render_object) {
-                                    panic!("Weird, looks render object for this entity exists.")
-                                };
-                            }
+                            mesh_container
                         }
+
+                        Err(_) => {
+
+                            if !event.is_pending {
+                                event_manager.add_pending(event);
+                            }
+
+                            continue;
+                        }
+                    };
+
+                    if let Some(some_mesh) = mesh_data.get(mesh_id) {
+
+                        match some_mesh {
+
+                            Some(mesh) => {
+                                match mesh {
+                                    MeshType::Textured(obj) => {
+                                        let _render_object = unsafe { init_textured_object(&obj) };
+                                    }
+
+                                    MeshType::Normal(obj) => {
+                                        let render_object = unsafe { init_normal_object(&obj) };
+
+                                        if let Some(_) = self.normal_objects.insert(id, render_object) {
+                                            panic!("Weird, looks render object for this entity exists.")
+                                        };
+
+                                        if event.is_pending { event_manager.remove_pending(&event); }
+                                    }
+                                }
+                            }
+
+                            None => {
+                                if !event.is_pending {
+                                    event_manager.add_pending(event);
+                                }
+
+                                continue;
+                            }
+                        } 
                     } else {
                         eprintln!("Looks like mesh of id {} was not loaded ", mesh_id);
                         continue;
                     }
                 }
 
-                Event::EntityRemoved(id) => {
+                EventType::EntityRemoved(id) => {
                     //Free VBOs and others
 
-                    let render_component = match world.components.renderables[*id].as_mut() {
+                    let render_component = match world.components.renderables[id].as_mut() {
                         Some(comp) => comp,
                         None => continue,
                     };
 
                     let mesh_id = render_component.mesh_id;
 
-                    if let Some(mesh) = world.resources.mesh_data.get(mesh_id) {
-                        match mesh {
-                            MeshType::Textured(_obj) => {
-                                remove_textured_object(
-                                    *id,
-                                    self.textured_objects.remove(id).unwrap(),
-                                );
-                            }
+                    let mesh_data = match world.resources.mesh_data.try_read()  {
+                        Ok(mesh_container) => {
+                            mesh_container     
+                        }
 
-                            MeshType::Normal(_obj) => {
-                                remove_normal_object(*id, self.normal_objects.remove(id).unwrap());
+                        Err(_) => {
+                            event_manager.add_pending(event);
+                            continue;
+                        }
+                    };
+
+                    if let Some(some_mesh) = mesh_data.get(mesh_id) {
+
+                        if let Some(mesh) = some_mesh {
+                            match mesh {
+                                MeshType::Textured(_obj) => {
+                                    remove_textured_object(
+                                        id,
+                                        self.textured_objects.remove(&id).unwrap(),
+                                    );
+                                }
+
+                                MeshType::Normal(_obj) => {
+                                    remove_normal_object(id, self.normal_objects.remove(&id).unwrap());
+                                }
                             }
                         }
                     }

@@ -13,7 +13,7 @@ use crate::utils::get_at_index;
 #[derive(Debug)]
 pub enum DrawError {
     ShaderNotFound,
-    ShaderNotAvailable
+    ShaderNotAvailable,
 }
 
 #[repr(C)]
@@ -143,7 +143,10 @@ fn process_textured_mesh(obj: &TexturedObj) -> (Vec<TexturedVertex>, Vec<u32>) {
         z: point.z,
     };
 
-    assert!( obj.vertices.len() == obj.normals.len() && obj.vertices.len() == obj.text_cords.len(), true);
+    assert!(
+        obj.vertices.len() == obj.normals.len() && obj.vertices.len() == obj.text_cords.len(),
+        true
+    );
 
     let mut output_vertices = vec![];
 
@@ -195,11 +198,11 @@ pub unsafe fn draw_normal_object<T>(
     object: &RenderObject,
     transform: &TransformComponent,
     light: &Light,
-    draw_params: T
-) -> Result<(), DrawError> 
-    where T: FnOnce()
+    draw_params: T,
+) -> Result<(), DrawError>
+where
+    T: FnOnce(),
 {
-
     let resources = world.resources.shaders.read().unwrap();
 
     let shader = match resources.get(shader_label) {
@@ -210,7 +213,7 @@ pub unsafe fn draw_normal_object<T>(
                 //Shader is not available skip
                 return Err(DrawError::ShaderNotAvailable);
             }
-        },
+        }
         None => return Err(DrawError::ShaderNotFound),
     };
 
@@ -218,10 +221,7 @@ pub unsafe fn draw_normal_object<T>(
     let perspective_matrix: Matrix4<f32> = camera.perspective();
     let scale = transform.scale;
     let scale_matrix = Matrix4::new(
-        scale, 0.0, 0.0, 0.0,
-        0.0, scale, 0.0, 0.0,
-        0.0, 0.0, scale, 0.0,
-        0.0, 0.0, 0.0, 1.0
+        scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, 1.0,
     );
     let model_matrix: Matrix4<f32> = transform.position.to_homogeneous() * scale_matrix;
 

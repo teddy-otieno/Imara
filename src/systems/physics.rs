@@ -9,8 +9,8 @@ use nphysics3d::object::{
 };
 use nphysics3d::world::{DefaultGeometricalWorld, DefaultMechanicalWorld};
 
-use super::system::System;
-use crate::core::{CastedRay, Engine, Event, EventType, EventManager};
+use super::system::{System, SystemType};
+use crate::core::{CastedRay, Engine, Event, EventManager, EventType};
 use crate::game_world::world::{MeshType, World};
 
 pub struct Physics {
@@ -65,11 +65,15 @@ impl Physics {
     }
 
     #[inline]
-    fn handle_world_events(&mut self, engine: &mut Engine, world: &mut World, event_manager: *mut EventManager) -> Result<(),()> {
-
+    fn handle_world_events(
+        &mut self,
+        engine: &mut Engine,
+        world: &mut World,
+        event_manager: *mut EventManager,
+    ) -> Result<(), ()> {
         let mesh_data = match world.resources.mesh_data.try_read() {
             Ok(dat) => dat,
-            Err(_) => return Err(())
+            Err(_) => return Err(()),
         };
 
         for event in unsafe { &mut *event_manager }.get_engine_events() {
@@ -97,44 +101,48 @@ impl Physics {
                     physics_component.rigid_handle = Some(rigid_body_handle);
 
                     let shape = if let Some(render_component) = &world.components.renderables[id] {
-                            // construct a trimesh
-                            let mesh_id = render_component.mesh_id;
+                        // construct a trimesh
+                        let mesh_label = &render_component.mesh_label;
 
-                            //We only process already loaded mesh data
-                            //When the data is not loaded i.e. `None` we append the event to pending events and Skip
-                            if let Some(mesh) = &mesh_data[mesh_id] {
-
-                                let trimesh = match mesh {
-
-                                    MeshType::Normal(obj) => {
-                                        let mut indices = vec![];
-
-                                        divide_indices(obj.indices.clone(), &mut indices);
-                                        TriMesh::new(
-                                            obj.vertices.iter().map(|p| p.xyz()).collect(),
-                                            indices,
-                                            None,
-                                        )
+                        //We only process already loaded mesh data
+                        //When the data is not loaded i.e. `None` we append the event to pending events and Skip
+                        //FIXME(teddy): This might cause a bug
+                        if let Some(mesh) = &**(mesh_data.get(mesh_label).unwrap()) {
+                            //Note(teddy) Thread this operation
+                            let trimesh = match mesh {
+                                MeshType::Normal(obj) => {
+                                    if event.is_pending_for(SystemType::PhysicsSystem) {
+                                        unsafe {
+                                            &mut (*event_manager)
+                                                .remove_pending(event.id, SystemType::PhysicsSystem)
+                                        };
                                     }
-
-                                    MeshType::Textured(_obj) => {
-                                        unimplemented!();
-                                    }
-                                };
-                                ShapeHandle::new(trimesh)
-                            } else {
-
-                                if !event.is_pending {
-                                    unsafe {&mut (*event_manager).add_pending(event) };
+                                    TriMesh::new(
+                                        obj.vertices.iter().map(|p| p.xyz()).collect(),
+                                        divide_indices(&obj.indices),
+                                        None,
+                                    )
                                 }
 
-                                continue;
+                                MeshType::Textured(_obj) => {
+                                    unimplemented!();
+                                }
+                            };
+                            ShapeHandle::new(trimesh)
+                        } else {
+                            if !event.is_pending_for(SystemType::PhysicsSystem) {
+                                unsafe {
+                                    &mut (*event_manager)
+                                        .add_pending(event, SystemType::PhysicsSystem)
+                                };
                             }
 
-                        } else {
-                            //Construct a ball, this entity could be a sensor
+                            continue;
+                        }
+                    } else {
+                        //Construct a ball, this entity could be a sensor
 
-                            ShapeHandle::new(Ball::new(1.5))
+                        ShapeHandle::new(Ball::new(1.5))
                     };
 
                     let collider_body = ColliderDesc::new(shape)
@@ -225,25 +233,39 @@ impl System for Physics {
     }
 }
 
-fn divide_indices(mut ind: Vec<u32>, result: &mut Vec<Point3<usize>>) {
-    assert!(ind.len() % 3 == 0, true);
+fn divide_indices(ind: &Vec<u32>) -> Vec<Point3<usize>> {
+    let collected_indices: Vec<Point3<usize>> = ind
+        .chunks(3)
+        .map(|x| {
+            assert!(x.len() == 3, true);
+            Point3::new(x[0] as usize, x[1] as usize, x[2] as usize)
+        })
+        .collect();
 
-    if ind.len() == 3 {
-        result.push(Point3::new(
-            ind[0] as usize,
-            ind[1] as usize,
-            ind[2] as usize,
-        ));
-    } else {
-        let next = ind.split_off(3);
-        assert!(ind.len() == 3, true);
-        result.push(Point3::new(
-            ind[0] as usize,
-            ind[1] as usize,
-            ind[2] as usize,
-        ));
-        divide_indices(next, result);
-    }
+    collected_indices
+
+    // result.push(Point3::new(
+    //     collected_indices[0],
+    //     collected_indices[1],
+    //     collected_indices[2],
+    // ));
+
+    // if ind.len() == 3 {
+    //     result.push(Point3::new(
+    //         ind[0] as usize,
+    //         ind[1] as usize,
+    //         ind[2] as usize,
+    //     ));
+    // } else {
+    //     let next = ind.split_off(3);
+    //     assert!(ind.len() == 3, true);
+    //     result.push(Point3::new(
+    //         ind[0] as usize,
+    //         ind[1] as usize,
+    //         ind[2] as usize,
+    //     ));
+    //     divide_indices(next, result);
+    // }
 }
 
 mod tests {
@@ -252,9 +274,8 @@ mod tests {
     #[test]
     fn test_divide_indices() {
         let list_of_indices = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
-        let mut result = Vec::with_capacity(list_of_indices.len() / 3);
-
-        divide_indices(list_of_indices, &mut result);
+        // let mut result = Vec::with_capacity(list_of_indices.len() / 3);
+        let mut result = divide_indices(&list_of_indices);
 
         println!("{:?}", result);
         assert!(result.len() == 3, true);

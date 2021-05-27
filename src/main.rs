@@ -29,7 +29,7 @@ use gl_bindings::Display;
 use systems::physics::Physics;
 use systems::render_system::Renderer;
 use systems::system::{System, Systems};
-use ui::ui::{ init_ui, };
+use ui::ui::init_ui;
 
 fn main() {
     let display = gl_bindings::init_gl_window_context((1000, 600), "Imara");
@@ -37,8 +37,10 @@ fn main() {
 }
 
 macro_rules! default_shader {
-    () => {String::from("default")}
-} 
+    () => {
+        String::from("default")
+    };
+}
 
 fn run(display: Display) {
     let fonts = unsafe { load_fonts(12) }.expect("Failed to load messages");
@@ -49,20 +51,25 @@ fn run(display: Display) {
     let mut world = World::new(ev_pointer as *mut EventManager);
     let mut systems = Systems::new();
 
-    world.resources.add_resource(AssetSource::Shader(
-        default_shader!(),
-        String::from("vert.glsl"),
-        String::from("frag.glsl"),
-        None,
-    ), false);
+    world.resources.add_resource(
+        AssetSource::Shader(
+            default_shader!(),
+            String::from("vert.glsl"),
+            String::from("frag.glsl"),
+            None,
+        ),
+        false,
+    );
 
-
-    world.resources.add_resource(AssetSource::Shader(
-        String::from("highlight_shader"),
-        String::from("vert.glsl"),
-        String::from("border_frag.glsl"),
-        None
-    ), false);
+    world.resources.add_resource(
+        AssetSource::Shader(
+            String::from("highlight_shader"),
+            String::from("vert.glsl"),
+            String::from("border_frag.glsl"),
+            None,
+        ),
+        false,
+    );
 
     init_ui(&mut engine, &mut world).unwrap();
 
@@ -92,7 +99,6 @@ fn run(display: Display) {
         engine.display.glfw.poll_events();
         event_manager.handle_events(glfw::flush_messages(&engine.display.events_receiver));
         engine.update(&mut event_manager);
-
 
         camera_behaviour(&mut engine);
         for system in systems.systems.iter_mut() {

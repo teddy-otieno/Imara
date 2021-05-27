@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::ffi::{c_void, CString};
+use std::hash::{Hash, Hasher};
 
 use freetype::freetype;
 use glfw::{Action, FlushedMessages, Key, MouseButton, WindowEvent};
@@ -9,10 +9,11 @@ use ncollide3d::query::Ray;
 
 use crate::game_world::world::{EntityID, World, FONT_ASSETS_DIR};
 use crate::gl_bindings::Display;
+use crate::systems::system::SystemType;
 use crate::ui::ui::{propagate_button_click, propagate_cursor_pos_to_ui, UITree, View};
 use crate::utils::Cords;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum EventType {
     EntityCreated(EntityID),
     EntityRemoved(EntityID),
@@ -28,13 +29,12 @@ static mut EVENT_IDS: u64 = 0;
 #[derive(Debug, Clone)]
 pub struct Event {
     pub id: u64,
-    pub is_pending: bool,
     pub event_type: EventType,
+    pending_systems: Vec<SystemType>,
 }
 
-
 impl PartialEq for Event {
-    fn eq(&self, other: &Self) -> bool{
+    fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
@@ -50,24 +50,44 @@ impl Eq for Event {}
 impl Event {
     pub fn new(event: EventType) -> Self {
         Self {
-            is_pending: false,
             id: unsafe {
                 let temp = EVENT_IDS;
-                EVENT_IDS  += 1;
+                EVENT_IDS += 1;
                 temp
             },
-            event_type: event
+            event_type: event,
+            pending_systems: vec![],
         }
+    }
+
+    pub fn register_pending_system(&mut self, register_system: SystemType) {
+        if self.pending_systems.contains(&register_system) {
+            return;
+        }
+
+        self.pending_systems.push(register_system);
+    }
+
+    pub fn remove_pending_system(&mut self, remove_system: SystemType) {
+        self.pending_systems.retain(|x| *x != remove_system);
+    }
+
+    pub fn get_pending_system(&self) -> &Vec<SystemType> {
+        &self.pending_systems
+    }
+
+    pub fn is_pending_for(&self, system: SystemType) -> bool {
+        self.pending_systems.contains(&system)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CastRayDat {
     pub id: usize,
     pub ray: Ray<f32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CastedRay {
     pub id: usize,
     pub entity: Option<EntityID>,
@@ -82,13 +102,11 @@ pub struct Light {
 
 #[inline(always)]
 pub fn mouse_clicked(engine: &Engine, button: &MouseButton) -> bool {
-    let result = engine.mouse_button_keys
-        .iter()
-        .find(|b| { *button == **b });
+    let result = engine.mouse_button_keys.iter().find(|b| *button == **b);
 
     match result {
         Some(_) => true,
-        None => false
+        None => false,
     }
 }
 
@@ -112,7 +130,7 @@ pub struct Engine {
 fn check_button(button: &MouseButton, action: &Action, buttons: &mut Vec<MouseButton>) {
     match action {
         Action::Press => {
-            if let None = buttons.iter().find(|b| *b == button) {
+            if let None = buttons.iter().find(|b| **b == *button) {
                 buttons.push(*button);
             }
         }
@@ -175,7 +193,6 @@ impl Engine {
                         self.camera.new_cords = cords;
                         propagate_cursor_pos_to_ui(self, cords)
                     }
-
                 }
 
                 WindowEvent::MouseButton(button, action, _modifiers) => {
@@ -212,10 +229,13 @@ impl Engine {
                         dbg!(&self.camera.camera_front);
                         let ray = Ray::new(Point3::from(self.camera.position), direction);
 
-                        let ray_cast_event = Event::new(EventType::CastRay(CastRayDat { id: 0, ray }));
+                        let ray_cast_event =
+                            Event::new(EventType::CastRay(CastRayDat { id: 0, ray }));
 
                         dbg!(&ray_cast_event);
-                        unsafe { (*eve_ptr).add_engine_event(ray_cast_event); }
+                        unsafe {
+                            (*eve_ptr).add_engine_event(ray_cast_event);
+                        }
                     }
                 }
 
@@ -231,7 +251,6 @@ impl Engine {
             }
         }
     }
-
 }
 
 //Handle user defined events
@@ -243,7 +262,8 @@ pub struct EventManager {
     engine_events: Vec<Event>,
     engine_events1: Vec<Event>,
 
-    pending_events: HashSet<Event>
+    pending_events: Vec<Event>,
+    pending_events_for_the_next_cycle: Vec<Event>,
 }
 
 impl EventManager {
@@ -252,7 +272,8 @@ impl EventManager {
             window_events: vec![],
             engine_events: vec![],
             engine_events1: vec![],
-            pending_events: HashSet::new(),
+            pending_events: vec![],
+            pending_events_for_the_next_cycle: vec![],
             which_buff: true,
         }
     }
@@ -284,18 +305,18 @@ impl EventManager {
         //Note(teddy) Add pending events
 
         if self.which_buff {
-
             let mut temp = self.engine_events.clone();
-            let event_array = self.pending_events
+            let event_array = self
+                .pending_events
                 .iter()
                 .map(|x| x.clone())
                 .collect::<Vec<Event>>();
             temp.extend_from_slice(event_array.as_slice());
             temp
-
         } else {
             let mut temp = self.engine_events1.clone();
-            let event_array = self.pending_events
+            let event_array = self
+                .pending_events
                 .iter()
                 .map(|x| x.clone())
                 .collect::<Vec<Event>>();
@@ -309,14 +330,39 @@ impl EventManager {
     //Issue will arising when the lock is held for too long.
     //We can timestamp the events and cancel events that have lived for a period of time
     //to ensure program correctness
-    pub fn add_pending(&mut self, mut event: Event) {
-        event.is_pending = true;
+    pub fn add_pending(&mut self, mut event: Event, system_type: SystemType) {
+        if let Some(existing) = self
+            .pending_events
+            .iter_mut()
+            .find(|x| (**x).id == event.id)
+        {
+            existing.register_pending_system(system_type);
+            return;
+        }
+        event.register_pending_system(system_type);
 
-        self.pending_events.insert(event);
+        //Note(teddy) Preventing pending events added from the current update cycle to be processed by the next system[s]
+        self.pending_events_for_the_next_cycle.push(event);
     }
 
-    pub fn remove_pending(&mut self, event: &Event) {
-        self.pending_events.remove(event);
+    pub fn remove_pending(&mut self, event_id: u64, system_type: SystemType) {
+        let (id, is_pending_systems_empty) = {
+            let event = self
+                .pending_events
+                .iter_mut()
+                .find(|x| (**x).id == event_id)
+                .unwrap();
+
+            if event.get_pending_system().contains(&system_type) {
+                event.remove_pending_system(system_type);
+            }
+
+            (event.id, event.get_pending_system().is_empty())
+        };
+
+        if is_pending_systems_empty {
+            self.pending_events.retain(|x| (*x).id != id);
+        }
     }
 
     pub fn clear(&mut self) {
@@ -329,6 +375,13 @@ impl EventManager {
         }
 
         self.which_buff = !self.which_buff;
+
+        //Bind pending events for the next cycle to pending events loop
+
+        self.pending_events
+            .extend_from_slice(self.pending_events_for_the_next_cycle.as_slice());
+        self.pending_events.dedup();
+        self.pending_events_for_the_next_cycle.clear();
     }
 }
 
@@ -342,7 +395,7 @@ enum CameraMovement {
 #[derive(Debug)]
 pub struct ViewPortDimensions {
     pub width: i32,
-    pub height: i32
+    pub height: i32,
 }
 
 pub struct Camera {
@@ -361,8 +414,8 @@ pub struct Camera {
 impl Camera {
     fn new() -> Self {
         Self {
-            position: Vector3::new(0.0, 0.0, 0.0),
-            camera_front: Vector3::new(0.0, 0.0, 0.0),
+            position: Vector3::new(-1.0, 0.0, 0.0),
+            camera_front: Vector3::new(1.0, 0.0, 0.0),
             camera_up: Vector3::new(0.0, 1.0, 0.0),
             first_move: true,
             // fov: 0.785398 std::f64::consts::FRAC_PI_4,
@@ -439,18 +492,17 @@ impl Camera {
             }
 
             CameraMovement::Left => {
-                self.position +=
-                    speed.unwrap_or(camera_speed) * self.camera_front.cross(&self.camera_up).normalize();
+                self.position += speed.unwrap_or(camera_speed)
+                    * self.camera_front.cross(&self.camera_up).normalize();
             }
 
             CameraMovement::Right => {
-                self.position -=
-                    speed.unwrap_or(camera_speed) * self.camera_front.cross(&self.camera_up).normalize();
+                self.position -= speed.unwrap_or(camera_speed)
+                    * self.camera_front.cross(&self.camera_up).normalize();
             }
         }
     }
 }
-
 
 #[inline]
 fn compute_ray_from_mouse_cords(
@@ -474,7 +526,6 @@ fn compute_ray_from_mouse_cords(
     mapped_direction.xyz().normalize()
 }
 
-
 macro_rules! contains_key {
     ($engine:expr, $key:expr) => {
         $engine.pressed_keys.contains(&$key)
@@ -486,19 +537,27 @@ static mut M_CLICKED: bool = false;
 
 pub fn camera_behaviour(engine: &mut Engine) {
     if contains_key!(engine, Key::W) {
-        engine.camera.update_position(CameraMovement::Up, Some(0.05));
+        engine
+            .camera
+            .update_position(CameraMovement::Up, Some(0.05));
     }
 
     if contains_key!(engine, Key::S) {
-        engine.camera.update_position(CameraMovement::Down, Some(0.05));
+        engine
+            .camera
+            .update_position(CameraMovement::Down, Some(0.05));
     }
 
     if contains_key!(engine, Key::A) {
-        engine.camera.update_position(CameraMovement::Left, Some(0.05));
+        engine
+            .camera
+            .update_position(CameraMovement::Left, Some(0.05));
     }
 
     if contains_key!(engine, Key::D) {
-        engine.camera.update_position(CameraMovement::Right, Some(0.05));
+        engine
+            .camera
+            .update_position(CameraMovement::Right, Some(0.05));
     }
 
     unsafe {

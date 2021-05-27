@@ -1,16 +1,17 @@
 use std::collections::HashMap;
 
-use nalgebra::{Vector3};
+use nalgebra::Vector3;
 
-use super::system::System;
+use super::system::{System, SystemType};
 use crate::core::{Engine, Event, EventManager, EventType};
 use crate::game_world::components::TransformComponent;
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::renderer::draw::*;
 
-
 macro_rules! border_shader {
-    () => { String::from("highlight_shader")}
+    () => {
+        String::from("highlight_shader")
+    };
 }
 pub struct Renderer {
     normal_objects: HashMap<EntityID, RenderObject>,
@@ -50,61 +51,66 @@ impl System for Renderer {
         for event in event_manager.get_engine_events().clone().into_iter() {
             match event.event_type {
                 EventType::EntityCreated(id) => {
+                    //If the object was already loaded skip
+                    if self.normal_objects.contains_key(&id)
+                        || self.textured_objects.contains_key(&id)
+                    {
+                        if event.is_pending_for(SystemType::RenderSystem) {
+                            event_manager.remove_pending(event.id, SystemType::RenderSystem);
+                        }
+                        continue;
+                    }
+
                     let render_component = match world.components.renderables[id].as_ref() {
                         Some(comp) => comp,
                         None => continue,
                     };
 
-                    let mesh_id = render_component.mesh_id;
+                    let mesh_label = &render_component.mesh_label;
 
-                    let mesh_data = match world.resources.mesh_data.try_read()  {
-                        Ok(mesh_container) => {
-
-                            mesh_container
-                        }
+                    let mesh_data = match world.resources.mesh_data.try_read() {
+                        Ok(mesh_container) => mesh_container,
 
                         Err(_) => {
-
-                            if !event.is_pending {
-                                event_manager.add_pending(event);
+                            if !event.is_pending_for(SystemType::RenderSystem) {
+                                event_manager.add_pending(event, SystemType::RenderSystem);
                             }
 
                             continue;
                         }
                     };
 
-                    if let Some(some_mesh) = mesh_data.get(mesh_id) {
+                    if let Some(some_mesh) = mesh_data.get(mesh_label) {
+                        match &**some_mesh {
+                            Some(mesh) => match mesh {
+                                MeshType::Textured(obj) => {
+                                    let _render_object = unsafe { init_textured_object(&obj) };
+                                }
 
-                        match some_mesh {
+                                MeshType::Normal(obj) => {
+                                    let render_object = unsafe { init_normal_object(&obj) };
 
-                            Some(mesh) => {
-                                match mesh {
-                                    MeshType::Textured(obj) => {
-                                        let _render_object = unsafe { init_textured_object(&obj) };
-                                    }
+                                    if let Some(_) = self.normal_objects.insert(id, render_object) {
+                                        panic!("Weird, looks render object for this entity exists.")
+                                    };
 
-                                    MeshType::Normal(obj) => {
-                                        let render_object = unsafe { init_normal_object(&obj) };
-
-                                        if let Some(_) = self.normal_objects.insert(id, render_object) {
-                                            panic!("Weird, looks render object for this entity exists.")
-                                        };
-
-                                        if event.is_pending { event_manager.remove_pending(&event); }
+                                    if event.is_pending_for(SystemType::RenderSystem) {
+                                        event_manager
+                                            .remove_pending(event.id, SystemType::RenderSystem);
                                     }
                                 }
-                            }
+                            },
 
                             None => {
-                                if !event.is_pending {
-                                    event_manager.add_pending(event);
+                                if !event.is_pending_for(SystemType::RenderSystem) {
+                                    event_manager.add_pending(event, SystemType::RenderSystem);
                                 }
 
                                 continue;
                             }
-                        } 
+                        }
                     } else {
-                        eprintln!("Looks like mesh of id {} was not loaded ", mesh_id);
+                        eprintln!("Looks like mesh of id {} was not loaded ", mesh_label);
                         continue;
                     }
                 }
@@ -117,22 +123,19 @@ impl System for Renderer {
                         None => continue,
                     };
 
-                    let mesh_id = render_component.mesh_id;
+                    let mesh_label = &render_component.mesh_label;
 
-                    let mesh_data = match world.resources.mesh_data.try_read()  {
-                        Ok(mesh_container) => {
-                            mesh_container     
-                        }
+                    let mesh_data = match world.resources.mesh_data.try_read() {
+                        Ok(mesh_container) => mesh_container,
 
                         Err(_) => {
-                            event_manager.add_pending(event);
+                            event_manager.add_pending(event, SystemType::RenderSystem);
                             continue;
                         }
                     };
 
-                    if let Some(some_mesh) = mesh_data.get(mesh_id) {
-
-                        if let Some(mesh) = some_mesh {
+                    if let Some(some_mesh) = mesh_data.get(mesh_label) {
+                        if let Some(mesh) = &**some_mesh {
                             match mesh {
                                 MeshType::Textured(_obj) => {
                                     remove_textured_object(
@@ -142,7 +145,10 @@ impl System for Renderer {
                                 }
 
                                 MeshType::Normal(_obj) => {
-                                    remove_normal_object(id, self.normal_objects.remove(&id).unwrap());
+                                    remove_normal_object(
+                                        id,
+                                        self.normal_objects.remove(&id).unwrap(),
+                                    );
                                 }
                             }
                         }
@@ -174,7 +180,6 @@ impl System for Renderer {
 
                     unsafe {
                         if let Some(higlight_component) = &world.components.highlightable[*i] {
-
                             gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
                             gl::StencilMask(0xFF);
 
@@ -195,14 +200,13 @@ impl System for Renderer {
                                 render_object,
                                 &transform_component,
                                 &engine.dir_lights,
-                                draw_params
+                                draw_params,
                             )
                             .unwrap();
 
-
                             let scaled_transform = TransformComponent::new(
                                 transform_component.position.translation.vector,
-                                Vector3::y(), 
+                                Vector3::y(),
                                 1.1,
                             );
 
@@ -227,14 +231,12 @@ impl System for Renderer {
                                 scaled_params,
                             )
                             .unwrap();
-
                         } else {
-
                             let draw_params = || {
-                                    gl::Enable(gl::CULL_FACE);
-                                    gl::Enable(gl::DEPTH_TEST);
-                                    gl::DepthFunc(gl::LESS);
-                                };
+                                gl::Enable(gl::CULL_FACE);
+                                gl::Enable(gl::DEPTH_TEST);
+                                gl::DepthFunc(gl::LESS);
+                            };
 
                             draw_normal_object(
                                 &world,
@@ -243,7 +245,7 @@ impl System for Renderer {
                                 render_object,
                                 &transform_component,
                                 &engine.dir_lights,
-                                draw_params
+                                draw_params,
                             )
                             .unwrap()
                         }
@@ -256,13 +258,10 @@ impl System for Renderer {
 
         unsafe {
             draw_ui(engine);
-
-            gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
-            gl::StencilMask(0xFF);
-            gl::Enable(gl::DEPTH_TEST);
         }
     }
 }
+
 
 //TODO(teddy) Draw on a seperate frame buffer
 unsafe fn draw_ui(engine: *mut Engine) {

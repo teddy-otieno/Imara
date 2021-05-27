@@ -2,6 +2,12 @@ use crate::core::{Engine, EventManager};
 use crate::game_world::world::World;
 use std::collections::LinkedList;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SystemType {
+    RenderSystem,
+    PhysicsSystem,
+}
+
 pub trait System {
     //WE might do some event subscriptions
     fn update(

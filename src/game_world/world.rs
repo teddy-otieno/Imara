@@ -1,8 +1,11 @@
-use std::collections::{HashMap, LinkedList};
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::{RwLock, Arc};
+use std::sync::{Arc, RwLock};
 use std::thread;
+use std::{
+    collections::{HashMap, LinkedList},
+    ops::{Deref, DerefMut},
+};
 
 use nalgebra::Vector3;
 use nphysics3d::material::{BasicMaterial, MaterialHandle};
@@ -42,17 +45,43 @@ pub enum AssetSource {
     Texture(String),
 }
 
-
 ///Enum used by add resource function
 #[derive(Debug)]
 pub enum ResourceResult {
-    Mesh(usize),
+    Mesh(String),
     Shader(String),
-    Texture(String)
+    Texture(String),
 }
 
+pub struct Mesh {
+    mesh_type: Option<MeshType>,
+    is_loaded: bool,
+}
 
-type MeshDataContainer = Vec<Option<MeshType>>;
+impl Mesh {
+    fn new() -> Self {
+        Self {
+            mesh_type: None,
+            is_loaded: false,
+        }
+    }
+}
+
+impl Deref for Mesh {
+    type Target = Option<MeshType>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.mesh_type
+    }
+}
+
+impl DerefMut for Mesh {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.mesh_type
+    }
+}
+
+type MeshDataContainer = HashMap<String, Mesh>;
 type ShaderContainer = HashMap<String, Option<u32>>;
 //Render component will hold the mesh id and a copy of the mesh's vertex data
 pub struct Resources {
@@ -64,14 +93,13 @@ impl Resources {
     pub fn new() -> Self {
         //Note(ted) Loading and compiling the shaders
         Self {
-            mesh_data: Arc::new(RwLock::new(vec![])),
+            mesh_data: Arc::new(RwLock::new(HashMap::new())),
             shaders: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     ///Threaded signal that the value is required immediately
     pub fn add_resource(&mut self, resource: AssetSource, threaded: bool) -> ResourceResult {
-
         //TODO(teddy) Spawn a thread to load the resources
 
         let mesh_shrd_ref = Arc::clone(&self.mesh_data);
@@ -80,40 +108,54 @@ impl Resources {
         match resource {
             AssetSource::Mesh(obj_type, location) => match obj_type {
                 ObjType::Normal => {
+                    let result = location.clone();
 
-                    let mut new_id = 0;
-                    {
-                        let mut mesh_container = mesh_shrd_ref.write().unwrap();
-                        new_id = mesh_container.len();
+                    let mut mesh_container = mesh_shrd_ref.write().unwrap();
 
-                        mesh_container.push(None);
+                    match mesh_container.get_mut(&result) {
+                        Some(mesh) if mesh.is_loaded => {
+                            return ResourceResult::Mesh(result);
+                        }
 
+                        None => {
+                            //Note(teddy) Mesh is not created
+                            mesh_container.insert(location.clone(), Mesh::new());
+                        }
+
+                        _ => unreachable!(),
                     }
 
-                    let load_mesh_routine = move || {
-                            let mesh : NormalObj = load_obj(
-                                format!("{}{}", OBJ_ASSETS_DIR, location).as_str()
-                            ).unwrap();
+                    drop(mesh_container); //Release lock
 
-                            let mut mesh_container = mesh_shrd_ref.write().unwrap();
-                            mesh_container[new_id] = Some(MeshType::Normal(mesh));
-                            drop(mesh_container);
+                    let mesh_ref_for_thread = Arc::clone(&self.mesh_data);
+                    let load_mesh_routine = move || {
+                        let mesh: NormalObj =
+                            load_obj(format!("{}{}", OBJ_ASSETS_DIR, location).as_str()).unwrap();
+
+                        let mut mesh_container = mesh_ref_for_thread.write().unwrap();
+                        let mesh_type_ref = mesh_container.get_mut(&location).unwrap();
+                        mesh_type_ref.mesh_type = Some(MeshType::Normal(mesh));
+                        drop(mesh_container);
                     };
 
+                    let mut mesh_container = mesh_shrd_ref.write().unwrap();
+                    //Note(teddy) Check whether the mesh already exists so that we can use the cached data
+
+                    let mesh = mesh_container.get_mut(&result).unwrap();
                     if threaded {
                         thread::spawn(load_mesh_routine);
                     } else {
                         load_mesh_routine();
                     }
+                    mesh.is_loaded = true;
 
-                    ResourceResult::Mesh(new_id)
+                    ResourceResult::Mesh(result)
                 }
 
-                ObjType::Textured => ResourceResult::Mesh(0),
+                ObjType::Textured => ResourceResult::Mesh(String::new()),
             },
 
             AssetSource::Shader(name, vertex, fragment, geo) => {
-
                 let copy_for_result = name.clone();
                 {
                     let mut shader_container = shader_shrd_ref.write().unwrap();
@@ -139,7 +181,6 @@ impl Resources {
                     let mut shader_container = shader_shrd_ref.write().unwrap();
                     shader_container.insert(name.clone(), Some(shader));
                 };
-
 
                 if threaded {
                     thread::spawn(load_and_compile_shader_routine);
@@ -204,7 +245,7 @@ pub struct ShaderObject {
     name: String,
     vert: String,
     frag: String,
-    geo: Option<String>
+    geo: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -249,7 +290,7 @@ struct PhysicsData {
 #[derive(Serialize, Deserialize)]
 struct RenderData {
     textures: Vec<String>,
-    mesh: usize,
+    mesh: String,
     shader: String,
 }
 
@@ -280,13 +321,15 @@ pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
 
     let world_ref = unsafe { &mut *world };
     for shader in level.shader_programs {
-
-        world_ref.resources.add_resource(AssetSource::Shader(
-            shader.name,
-            shader.vert.clone(),
-            shader.vert.clone(),
-            shader.geo.clone(),
-        ), true);
+        world_ref.resources.add_resource(
+            AssetSource::Shader(
+                shader.name,
+                shader.vert.clone(),
+                shader.vert.clone(),
+                shader.geo.clone(),
+            ),
+            true,
+        );
     }
 
     for (obj_type, source) in level.meshes {
@@ -343,7 +386,7 @@ pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
 
         //Hello world
         world_ref.components.renderables[id] = Some(RenderComponent::new(
-            entity.render.mesh,
+            entity.render.mesh.clone(),
             entity.render.shader.clone(),
         ));
     }

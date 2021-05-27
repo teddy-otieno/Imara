@@ -1,6 +1,6 @@
-use std::fmt;
 use nalgebra::{Matrix4, Vector3, Vector4};
 use std::collections::LinkedList;
+use std::fmt;
 
 use crate::core::ViewPortDimensions;
 
@@ -35,10 +35,12 @@ pub fn compute_world_space_to_screen_space(
         1.0,
     );
 
-    let mut world_position_mapped_to_screen_position: Vector4<f32> = (perspective_matrix * view_matrix) * position_to_vec4;
+    let mut world_position_mapped_to_screen_position: Vector4<f32> =
+        (perspective_matrix * view_matrix) * position_to_vec4;
     world_position_mapped_to_screen_position = world_position_mapped_to_screen_position;
 
-    let screen_cords = world_position_mapped_to_screen_position.xy() / world_position_mapped_to_screen_position.z;
+    let screen_cords =
+        world_position_mapped_to_screen_position.xy() / world_position_mapped_to_screen_position.z;
 
     let ViewPortDimensions { width, height } = screen_dimensions;
 
@@ -48,5 +50,8 @@ pub fn compute_world_space_to_screen_space(
     let cord_x = (x + 1.0) * (width as f32 / 2.0);
     let cord_y = (y - 1.0) * (height as f32 / -2.0);
 
-    Cords{x: cord_x, y: cord_y}
+    Cords {
+        x: cord_x,
+        y: cord_y,
+    }
 }

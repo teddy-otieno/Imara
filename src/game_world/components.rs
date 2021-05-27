@@ -35,18 +35,18 @@ pub struct HighlightComponent {
 #[derive(Debug)]
 pub struct RenderComponent {
     pub should_update: bool,
-    pub mesh_id: usize,
+    pub mesh_label: String,
     pub shader_label: String,
     pub textures: Vec<String>,
 }
 
 impl RenderComponent {
-    pub fn new(mesh_id: usize, shader_label: String) -> Self {
+    pub fn new(mesh_label: String, shader_label: String) -> Self {
         //let (vertex_data, indices) = Self::process_mesh(mesh);
 
         Self {
             should_update: true,
-            mesh_id,
+            mesh_label,
             shader_label,
             textures: vec![],
         }

@@ -347,16 +347,6 @@ impl View for TextView {
                 (size.x + (self.view.padding << 1)) as f32,
             );
 
-            draw_quad_with_default_shader(
-                engine,
-                self.view.background_vao as u32,
-                self.view.background_vbo as u32,
-                -0.3,
-                (self.view.position.x as f32, self.view.position.y as f32),
-                quad_size,
-                // &[0.2, 0.2, 0.2],
-                &self.view.background_color,
-            );
             draw_text(
                 self.text_vao as u32,
                 self.text_vbo as u32,
@@ -368,6 +358,17 @@ impl View for TextView {
                 1.0,
                 color,
             );
+            draw_quad_with_default_shader(
+                engine,
+                self.view.background_vao as u32,
+                self.view.background_vbo as u32,
+                -0.9,
+                (self.view.position.x as f32, self.view.position.y as f32),
+                quad_size,
+                // &[0.2, 0.2, 0.2],
+                &self.view.background_color,
+            );
+
         }
 
         Ok(())
@@ -668,22 +669,6 @@ impl View for SimpleUIContainer {
         );
 
 
-        if true {
-
-        unsafe {
-            draw_quad_with_default_shader(
-                engine,
-                self.view.background_vao as u32,
-                self.view.background_vbo as u32,
-                0.0,
-                quad_position,
-                quad_size,
-                // &[0.2, 0.2, 0.2],
-                &[0.6, 0.3, 0.3],
-            );
-        }
-        }
-
         //TODO(teddy) This initial position will be the position of the container
         //TODO(teddy) optimize this to prevent recalculations
         match self.orientation {
@@ -716,6 +701,19 @@ impl View for SimpleUIContainer {
                     view.update(engine).unwrap();
                 }
             }
+        }
+
+        unsafe {
+            draw_quad_with_default_shader(
+                engine,
+                self.view.background_vao as u32,
+                self.view.background_vbo as u32,
+                0.99,
+                quad_position,
+                quad_size,
+                // &[0.2, 0.2, 0.2],
+                &[0.6, 0.3, 0.3],
+            );
         }
 
         Ok(())

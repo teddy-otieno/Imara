@@ -43,7 +43,7 @@ macro_rules! default_shader {
 }
 
 fn run(display: Display) {
-    let fonts = unsafe { load_fonts(12) }.expect("Failed to load messages");
+    let fonts = unsafe { load_fonts(12).unwrap() };
 
     let mut engine = Engine::new(display, fonts);
     let mut event_manager = EventManager::new();

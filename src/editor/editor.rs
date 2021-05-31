@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 use glfw::MouseButton;
 use nalgebra::{Matrix4, Point3, Vector3};
@@ -10,7 +11,7 @@ use crate::{core::{
     ViewPortDimensions,
 }, ui::ui::View};
 use crate::game_world::components::*;
-use crate::game_world::world::{AssetSource, ObjType};
+use crate::game_world::world::{AssetSource, ObjType, OBJ_ASSETS_DIR};
 use crate::game_world::world::{ResourceResult, World};
 use crate::ui::ui::{
     Orientation, SimpleUIContainer, TextView, UITree, ViewContainer, ViewPosition,
@@ -155,7 +156,7 @@ fn create_entity(
 
 fn load_list_of_obj_assets() -> Vec<String> {
     let mut output = vec![];
-    let directory = fs::read_dir(".\\assets\\objects").unwrap();
+    let directory = fs::read_dir(dbg!(Path::new(OBJ_ASSETS_DIR))).unwrap();
     for entry in directory {
         let dir = entry.unwrap().path();
         output.push(String::from(dir.to_str().unwrap()));

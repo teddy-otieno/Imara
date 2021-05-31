@@ -17,10 +17,10 @@ use crate::core::{Event, EventManager, EventType};
 use crate::obj_parser::{load_obj, NormalObj, TexturedObj};
 use crate::renderer::shaders::create_shader;
 
-const WORLD_LEVELS_DIR: &'static str = "C:\\Users\\teddj\\dev\\work\\Imara\\assets\\levels\\";
-const OBJ_ASSETS_DIR: &'static str = "C:\\Users\\teddj\\dev\\work\\Imara\\assets\\objects\\";
-const SHADER_ASSETS_DIR: &'static str = "C:\\Users\\teddj\\dev\\work\\Imara\\assets\\shaders\\";
-pub const FONT_ASSETS_DIR: &'static str = "C:\\Users\\teddj\\dev\\work\\Imara\\assets\\fonts\\";
+const WORLD_LEVELS_DIR: &'static str = "./assets/levels/";
+pub const OBJ_ASSETS_DIR: &'static str = "./assets/objects/";
+const SHADER_ASSETS_DIR: &'static str = "./assets/shaders/";
+pub const FONT_ASSETS_DIR: &'static str = "./assets/fonts/";
 
 static mut ENTITY_ID: usize = 0;
 pub const ENTITY_SIZE: usize = 100_000;

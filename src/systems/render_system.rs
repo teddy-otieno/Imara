@@ -25,29 +25,109 @@ impl Renderer {
             textured_objects: HashMap::new(),
         }
     }
-}
 
-impl System for Renderer {
-    fn name(&self) -> String {
-        String::from("Renderer")
+    unsafe fn draw_entities(&mut self, engine_ptr: *mut Engine, world: &mut World) {
+        let engine = engine_ptr.as_mut().unwrap();
+
+        gl::BindFramebuffer(gl::FRAMEBUFFER, engine.scene_frame_buffer);
+
+        for i in world.entities.iter() {
+            let render_component = match &world.components.renderables[*i] {
+                Some(component) => component,
+                None => continue,
+            };
+
+            let transform_component = match &world.components.positionable[*i] {
+                Some(component) => component,
+                None => continue,
+            };
+
+            if render_component.should_update {
+                if render_component.textures.len() == 0 {
+                    let render_object = match self.normal_objects.get(i) {
+                        Some(object) => object,
+                        None => continue,
+                    };
+
+                    unsafe {
+                        if let Some(higlight_component) = &world.components.highlightable[*i] {
+                            gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+                            gl::StencilMask(0xFF);
+
+                            let draw_params = || {
+                                // gl::Enable(gl::DEPTH_TEST);
+                                // gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+                                // gl::StencilMask(0xFF);
+                            };
+
+                            gl::Enable(gl::DEPTH_TEST);
+                            gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+                            gl::StencilMask(0xFF);
+
+                            draw_normal_object(
+                                &world,
+                                &render_component.shader_label,
+                                &engine.camera,
+                                render_object,
+                                &transform_component,
+                                &engine.dir_lights,
+                                draw_params,
+                            )
+                            .unwrap();
+
+                            let scaled_transform = TransformComponent::new(
+                                transform_component.position.translation.vector,
+                                Vector3::y(),
+                                1.1,
+                            );
+
+                            //let scaled_shader = &world.resources.shaders[&border_shader!()];
+                            let scaled_params = || {
+                                // gl::StencilFunc(gl::EQUAL, 1, 0xFF);
+                                // gl::StencilMask(0x00);
+                                // gl::Disable(gl::DEPTH_TEST);
+                            };
+
+                            //Drawing scaled version of the object
+                            gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
+                            gl::StencilMask(0x00);
+                            gl::Disable(gl::DEPTH_TEST);
+                            draw_normal_object(
+                                &world,
+                                &border_shader!(),
+                                &engine.camera,
+                                render_object,
+                                &scaled_transform,
+                                &engine.dir_lights,
+                                scaled_params,
+                            )
+                            .unwrap();
+                        } else {
+                            let draw_params = || {
+                                gl::Enable(gl::CULL_FACE);
+                                gl::Enable(gl::DEPTH_TEST);
+                                gl::DepthFunc(gl::LESS);
+                            };
+
+                            draw_normal_object(
+                                &world,
+                                &render_component.shader_label,
+                                &engine.camera,
+                                render_object,
+                                &transform_component,
+                                &engine.dir_lights,
+                                draw_params,
+                            )
+                            .unwrap()
+                        }
+                    };
+                }
+            }
+        }
     }
 
-    fn update(
-        &mut self,
-        world: &mut World,
-        event_manager: &mut EventManager,
-        engine: &mut Engine,
-        _delta_time: f32,
-    ) {
-        unsafe {
-            gl::ClearColor(0.1, 0.1, 0.1, 1.0);
-            gl::ClearStencil(0);
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT)
-        };
+    fn handle_system_events(&mut self, event_manager: &mut EventManager, world: &mut World) {
 
-        //Check for new created entities
-
-        // dbg!(&event_manager.get_engine_events());
         for event in event_manager.get_engine_events().clone().into_iter() {
             match event.event_type {
                 EventType::EntityCreated(id) => {
@@ -158,117 +238,46 @@ impl System for Renderer {
                 _ => (),
             }
         }
-
-        //Dr
-        for i in world.entities.iter() {
-            let render_component = match &world.components.renderables[*i] {
-                Some(component) => component,
-                None => continue,
-            };
-
-            let transform_component = match &world.components.positionable[*i] {
-                Some(component) => component,
-                None => continue,
-            };
-
-            if render_component.should_update {
-                if render_component.textures.len() == 0 {
-                    let render_object = match self.normal_objects.get(i) {
-                        Some(object) => object,
-                        None => continue,
-                    };
-
-                    unsafe {
-                        if let Some(higlight_component) = &world.components.highlightable[*i] {
-                            gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
-                            gl::StencilMask(0xFF);
-
-                            let draw_params = || {
-                                // gl::Enable(gl::DEPTH_TEST);
-                                // gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
-                                // gl::StencilMask(0xFF);
-                            };
-
-                            gl::Enable(gl::DEPTH_TEST);
-                            gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
-                            gl::StencilMask(0xFF);
-
-                            draw_normal_object(
-                                &world,
-                                &render_component.shader_label,
-                                &engine.camera,
-                                render_object,
-                                &transform_component,
-                                &engine.dir_lights,
-                                draw_params,
-                            )
-                            .unwrap();
-
-                            let scaled_transform = TransformComponent::new(
-                                transform_component.position.translation.vector,
-                                Vector3::y(),
-                                1.1,
-                            );
-
-                            //let scaled_shader = &world.resources.shaders[&border_shader!()];
-                            let scaled_params = || {
-                                // gl::StencilFunc(gl::EQUAL, 1, 0xFF);
-                                // gl::StencilMask(0x00);
-                                // gl::Disable(gl::DEPTH_TEST);
-                            };
-
-                            //Drawing scaled version of the object
-                            gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
-                            gl::StencilMask(0x00);
-                            gl::Disable(gl::DEPTH_TEST);
-                            draw_normal_object(
-                                &world,
-                                &border_shader!(),
-                                &engine.camera,
-                                render_object,
-                                &scaled_transform,
-                                &engine.dir_lights,
-                                scaled_params,
-                            )
-                            .unwrap();
-                        } else {
-                            let draw_params = || {
-                                gl::Enable(gl::CULL_FACE);
-                                gl::Enable(gl::DEPTH_TEST);
-                                gl::DepthFunc(gl::LESS);
-                            };
-
-                            draw_normal_object(
-                                &world,
-                                &render_component.shader_label,
-                                &engine.camera,
-                                render_object,
-                                &transform_component,
-                                &engine.dir_lights,
-                                draw_params,
-                            )
-                            .unwrap()
-                        }
-                    };
-                }
-            }
-        }
-
-        //TODO(teddy) Split this ui updates to a seperate thread
-
-        unsafe {
-            draw_ui(engine);
-        }
     }
 }
+
+impl System for Renderer {
+    fn name(&self) -> String {
+        String::from("Renderer")
+    }
+
+    fn update(
+        &mut self,
+        world: &mut World,
+        event_manager: &mut EventManager,
+        engine: &mut Engine,
+        _delta_time: f32,
+    ) {
+        unsafe {
+            gl::ClearColor(0.1, 0.1, 0.1, 1.0);
+            gl::ClearStencil(0);
+            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT)
+        };
+
+        self.handle_system_events(event_manager, world);
+
+        unsafe {
+            self.draw_entities(engine, world);
+            draw_ui(engine);
+        }
+
+        //TODO: Blend together the framebuffers
+    }
+}
+
 
 
 //TODO(teddy) Draw on a seperate frame buffer
 unsafe fn draw_ui(engine: *mut Engine) {
     let eng = engine.as_mut().unwrap();
-    // for view in eng.ui_view.iter_mut() {
-    //     view.update(engine.as_mut().unwrap()).unwrap();
-    // }
+    gl::BindFramebuffer(gl::FRAMEBUFFER, eng.ui_frame_buffer.unwrap());
+
+    //TODO(Teddy) Do all the buffer clearing operations
 
     if let Some(view) = &mut eng.get_ui_tree().unwrap().root {
         match view.update(engine.as_ref().unwrap()) {

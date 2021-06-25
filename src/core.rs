@@ -124,6 +124,7 @@ pub struct Engine {
     pub ui_view: Vec<Box<dyn View>>,
     pub ui_tree: Option<*mut UITree>,
     pub ui_frame_buffer: Option<u32>,
+    pub scene_frame_buffer: u32,
 }
 
 #[inline(always)]
@@ -148,6 +149,12 @@ fn check_button(button: &MouseButton, action: &Action, buttons: &mut Vec<MouseBu
 //TODO(teddy) have an init routine
 impl Engine {
     pub fn new(display: Display, font_face: FontFace) -> Self {
+        let mut fbo = 0;
+
+        unsafe {
+            gl::GenFramebuffers(1, &mut fbo);
+        }
+
         Self {
             display,
             camera: Camera::new(),
@@ -164,6 +171,7 @@ impl Engine {
             ui_view: vec![],
             ui_frame_buffer: None,
             ui_tree: None,
+            scene_frame_buffer: fbo
         }
     }
 
@@ -225,14 +233,14 @@ impl Engine {
                             self.camera.view(),
                         );
 
-                        dbg!(&direction);
-                        dbg!(&self.camera.camera_front);
+                        // dbg!(&direction);
+                        // dbg!(&self.camera.camera_front);
                         let ray = Ray::new(Point3::from(self.camera.position), direction);
 
                         let ray_cast_event =
                             Event::new(EventType::CastRay(CastRayDat { id: 0, ray }));
 
-                        dbg!(&ray_cast_event);
+                        // dbg!(&ray_cast_event);
                         unsafe {
                             (*eve_ptr).add_engine_event(ray_cast_event);
                         }

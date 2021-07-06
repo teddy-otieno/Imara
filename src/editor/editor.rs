@@ -34,7 +34,7 @@ impl Editor {
     }
 
     pub fn init_editor_ui(&mut self, engine: &mut Engine, world: &mut World) {
-        let simpe_container_position = ViewPosition::new(100, 100);
+        let simpe_container_position = ViewPosition::new(0, 0);
         let mut simple_container = Box::new(SimpleUIContainer::new(
             String::from("simple_container").into_boxed_str(),
             None,
@@ -98,6 +98,8 @@ impl Editor {
             asset_name_text_view.on_click = Some(Box::new(move |view: *mut TextView| {
                 let self_ref = unsafe { self_ptr.as_mut().unwrap() };
                 //Move the camera closer to the entity
+
+                println!("ON CLICK CLICKED");
                 let id = create_entity(world_ptr, engine_ptr, name.clone(), shader.clone());
                 self_ref.selected_entity = Some(id);
             }));
@@ -122,7 +124,7 @@ fn create_entity(
 
     let id = world.create_entity();
 
-    let words: Vec<&str> = file_path.split("\\").collect();
+    let words: Vec<&str> = file_path.split("/").collect();
     let mesh_id = match world.resources.add_resource(
         AssetSource::Mesh(ObjType::Normal, String::from(words[words.len() - 1])),
         true,

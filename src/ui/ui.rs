@@ -299,6 +299,12 @@ impl TextView {
     }
 }
 
+macro_rules! button_clicked {
+    ($container:expr, $butt:expr) => {
+        $container.iter().find(|b: &&MouseButton| **b == $butt)
+    };
+}
+
 impl View for TextView {
     fn get_id(&self) -> &str {
         &(*self.view.id)
@@ -384,34 +390,32 @@ impl View for TextView {
         clicked_buttons: &Vec<MouseButton>,
         cords: Cords<f32>,
     ) -> bool {
+        println!("Button click intersected");
+        dbg!(&cords);
+
         if does_cursor_intersect(
             &cords,
-            self.view.position,
+            self.get_position().unwrap(),
             self.view.size.unwrap_or(ViewDimens::zerod()),
             self.view.padding,
         ) {
             //Note(teddy) Left Click
             let self_ptr: *mut TextView = self;
-            if let Some(_) = clicked_buttons
-                .iter()
-                .find(|b: &&MouseButton| **b == MouseButton::Button1)
-            {
+            if let Some(_) = button_clicked!(clicked_buttons,MouseButton::Button1) {
+
                 if let Some(func) = &self.on_click {
                     func(self_ptr);
                 }
-            } else if let Some(_) = clicked_buttons
-                .iter()
-                .find(|b: &&MouseButton| **b == MouseButton::Button2)
-            {
+
+            }
+            if let Some(_) = button_clicked!(clicked_buttons, MouseButton::Button2) {
                 //Right Click
                 println!("Right click was clicked");
                 if let Some(func) = &self.on_right_click {
                     func(self_ptr);
                 }
-            } else if let Some(_) = clicked_buttons
-                .iter()
-                .find(|b: &&MouseButton| **b == MouseButton::Button3)
-            {
+            } 
+            if let Some(_) = button_clicked!(clicked_buttons, MouseButton::Button3) {
                 //Middleclick
                 println!("Middle click was clicked");
                 if let Some(func) = &self.on_middle_click {
@@ -422,6 +426,7 @@ impl View for TextView {
 
         true
     }
+
     fn get_view_dimensions(&self) -> Option<ViewDimens> {
         match self.view.size {
             Some(size) => Some(ViewDimens::new(
@@ -453,8 +458,11 @@ fn does_cursor_intersect(
         (size.y + (padding << 1)) as f32,
     );
 
-    let quad_position = (position.x as f32, position.y as f32 - quad_size.1 as f32);
+    let quad_position = (position.x as f32, position.y as f32);
 
+
+    dbg!(&cords);
+    dbg!(&quad_position);
     let min_x = quad_position.0;
     let min_y = quad_position.1;
 
@@ -636,15 +644,21 @@ impl View for SimpleUIContainer {
         button: &Vec<MouseButton>,
         cords: Cords<f32>,
     ) -> bool {
+
+        println!("Hello darkness my old friend");
         let container_position =self.view.position;
 
-        if does_cursor_intersect(
+
+        // println!(self.get_view_object().)
+        if dbg!(does_cursor_intersect(
             &cords,
             //self.position.unwrap_or(ViewDimens::zerod()),
             container_position,
             self.view.size.unwrap_or(ViewDimens::zerod()),
             0,
-        ) {
+        )) {
+
+            println!("Intersection was successful");
             for view in &mut self.children {
                 view.handle_button_click(engine, button, cords);
             }

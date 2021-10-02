@@ -103,7 +103,7 @@ pub struct Light {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct FrameRenderObject {
     pub frame_buffer: u32,
     pub texture: u32,
@@ -112,11 +112,11 @@ pub struct FrameRenderObject {
 
 impl FrameRenderObject {
 
-    pub unsafe fn new(camera: &Camera) -> Self {
+    pub unsafe fn new(viewport: ViewPortDimensions, enable_alpha: bool) -> Self {
         use std::convert::TryInto;
         //FIXME: Fail on errors
 
-        let ViewPortDimensions{  width, height} = camera.view_port;
+        let ViewPortDimensions{  width, height} = viewport;
 
         //Note(teddy) create the framebuffer
         let mut fbo = 0;
@@ -160,6 +160,17 @@ impl FrameRenderObject {
             texture: texture_color_buffer,
             rbo
         })
+    }
+
+    unsafe fn dispose(&mut self) {
+        gl::DeleteFramebuffers(1, [self.frame_buffer].as_ptr());
+        gl::DeleteRenderbuffers(1, [self.rbo].as_ptr());
+        gl::DeleteTextures(1, [self.texture].as_ptr());
+    }
+
+    unsafe fn resize(mut self, width: i32, height: i32) -> Self {
+        self.dispose();
+        FrameRenderObject::new(ViewPortDimensions{width, height}, true)
     }
 }
 
@@ -211,7 +222,7 @@ impl Engine {
 
         let camera = Camera::new();
         let scene_render_obj = unsafe {
-            FrameRenderObject::new(&camera)
+            FrameRenderObject::new(camera.view_port, true)
         };
 
         Self {
@@ -245,7 +256,15 @@ impl Engine {
             match event {
                 WindowEvent::Size(width, height) => {
                     self.camera.view_port = ViewPortDimensions{  width: *width, height: *height };
-                    unsafe { gl::Viewport(0, 0, *width, *height) }
+
+                    unsafe {
+                        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+                        gl::Viewport(0, 0, *width, *height);
+
+                        self.scene_render_object = self.scene_render_object.resize(*width, *height);
+                        self.ui_render_object = Some(self.ui_render_object.unwrap().resize(*width, *height));
+                    }
+
                 }
 
                 WindowEvent::CursorPos(x, y) => {

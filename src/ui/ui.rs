@@ -492,7 +492,7 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
     }
 
     unsafe {
-        engine.ui_render_object = Some(FrameRenderObject::new(&engine.camera));
+        engine.ui_render_object = Some(FrameRenderObject::new(engine.camera.view_port, true));
     }
 
     let _ = world.resources.add_resource(

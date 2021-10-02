@@ -38,6 +38,8 @@ pub fn init_gl_window_context(initial_size: (u32, u32), window_name: &str) -> Di
 
     unsafe { gl::Viewport(0, 0, initial_size.0 as i32, initial_size.1 as i32) };
 
+    glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
+
     Display {
         glfw,
         window,

@@ -14,6 +14,7 @@ mod game_world;
 mod gl_bindings;
 mod obj_parser;
 mod renderer;
+
 mod systems;
 mod ui;
 mod utils;
@@ -28,6 +29,8 @@ use game_world::world::{AssetSource, World};
 use gl_bindings::Display;
 use systems::physics::Physics;
 use systems::render_system::Renderer;
+
+#[macro_use]
 use systems::system::{System, Systems};
 use ui::ui::init_ui;
 
@@ -41,6 +44,7 @@ macro_rules! default_shader {
         String::from("default")
     };
 }
+
 
 fn run(display: Display) {
     let fonts = unsafe { load_fonts(12).unwrap() };
@@ -71,6 +75,17 @@ fn run(display: Display) {
         false,
     );
 
+
+    world.resources.add_resource(
+        AssetSource::Shader(
+            SCREEN_SHADER!(),
+            String::from("screen_vert.glsl"),
+            String::from("screen_frag.glsl"),
+            None
+            ),
+        false,
+        );
+
     init_ui(&mut engine, &mut world).unwrap();
 
     //TODO(teddy) Issue will happen
@@ -83,6 +98,12 @@ fn run(display: Display) {
 
     systems.systems.push_front(render_system);
     systems.systems.push_front(physics_system);
+
+    {
+        for system in systems.systems.iter_mut() {
+            system.init(&mut world, &mut engine).unwrap();
+        }
+    }
     // I have to create and load a mesh
     //world.components.(RenderComponent::new())
     let mut frame_time: u128 = 0;
@@ -113,8 +134,8 @@ fn run(display: Display) {
         ticks += 1;
 
         if frame_time >= 1000000000 {
-            println!("{} : Frames per second", ticks);
-            // println!("Avg. Frame Time {} ns", frame_time / ticks);
+            //println!("{} : Frames per second", ticks);
+            println!("Avg. Frame Time {} ns", frame_time / ticks);
             frame_time = 0;
             ticks = 0;
         }

@@ -4,7 +4,7 @@ use std::ffi::CString;
 
 use nalgebra::{Matrix4, Point3, Point4, Vector3};
 
-use crate::core::{Camera, Engine, Light};
+use crate::core::{Camera, Engine, Light, ViewPortDimensions};
 use crate::game_world::components::{HighlightComponent, TransformComponent};
 use crate::game_world::world::World;
 use crate::obj_parser::{NormalObj, TexturedObj};
@@ -301,8 +301,9 @@ pub unsafe fn draw_text(
 
     //Note(teddy) Since opengl's origin cords are at the bottom. We decrement the y with font_size
     //to accurately map the font cords to the screen
-    y = engine.camera.view_port.1 as f32 - y - engine.font_face.font_size as f32;
-    let (width, height) = engine.camera.view_port;
+    let ViewPortDimensions { width, height } = engine.camera.view_port;
+
+    y = height as f32 - y - engine.font_face.font_size as f32;
 
     let projection: Matrix4<f32> =
         Matrix4::new_orthographic(0.0, width as f32, 0.0, height as f32, -1.0, 1.0);
@@ -410,7 +411,7 @@ pub unsafe fn draw_quad_with_default_shader(
     let program = UI_QUAD_SHADER_ID;
     gl::UseProgram(program);
 
-    let (width, height) = engine.camera.view_port;
+    let ViewPortDimensions {width, height} = engine.camera.view_port;
 
     let projection: Matrix4<f32> =
         Matrix4::new_orthographic(0.0, width as f32, 0.0, height as f32, -1.0, 1.0);

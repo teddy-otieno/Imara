@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::{c_void, CString};
 use std::hash::{Hash, Hasher};
+use std::ptr::null;
 
 use freetype::freetype;
 use glfw::{Action, FlushedMessages, Key, MouseButton, WindowEvent};
@@ -26,6 +27,7 @@ pub enum EventType {
 ///will be aware of their presence as they update the game states
 
 static mut EVENT_IDS: u64 = 0;
+
 #[derive(Debug, Clone)]
 pub struct Event {
     pub id: u64,
@@ -100,14 +102,71 @@ pub struct Light {
     pub direction: [f32; 3],
 }
 
+
+#[derive(Debug)]
+pub struct FrameRenderObject {
+    pub frame_buffer: u32,
+    pub texture: u32,
+    pub rbo: u32, 
+}
+
+impl FrameRenderObject {
+
+    pub unsafe fn new(camera: &Camera) -> Self {
+        use std::convert::TryInto;
+        //FIXME: Fail on errors
+
+        let ViewPortDimensions{  width, height} = camera.view_port;
+
+        //Note(teddy) create the framebuffer
+        let mut fbo = 0;
+        gl::GenFramebuffers(1, &mut fbo);
+        gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+
+        //Note(teddy) generate texture
+        let mut texture_color_buffer = 0;
+        gl::GenTextures(1, &mut texture_color_buffer);
+        gl::BindTexture(gl::TEXTURE_2D, texture_color_buffer);
+        gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGB.try_into().unwrap(), width, height, 0, gl::RGB, gl::UNSIGNED_BYTE, null());
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR.try_into().unwrap());
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR.try_into().unwrap());
+        //
+        //Note(teddy) Attach it to currently bound framebuffer object
+        gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, texture_color_buffer, 0);
+
+        //gl::BindTexture(gl::TEXTURE_2D, 0);
+
+
+
+        //Note(teddy) we want openGl to do depth and stencil testing
+        let mut rbo = 0;
+        gl::GenRenderbuffers(1, &mut rbo);
+        gl::BindRenderbuffer(gl::RENDERBUFFER, rbo);
+        gl::RenderbufferStorage(gl::RENDERBUFFER, gl::DEPTH24_STENCIL8, width, height); 
+        gl::BindRenderbuffer(gl::RENDERBUFFER, 0);
+
+        //Note(teddy) attach the renderbuffer object to the depth and stencil atttachment of the framebuffer
+        gl::FramebufferRenderbuffer(gl::FRAMEBUFFER, gl::DEPTH_STENCIL_ATTACHMENT, gl::RENDERBUFFER, rbo);
+
+        if gl::CheckFramebufferStatus(gl::FRAMEBUFFER) != gl::FRAMEBUFFER_COMPLETE {
+            eprintln!("Error: Framebuffer:: Framebuffer is not complete");
+            panic!("Framebuffer couldn't be build")
+        }
+        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+
+
+        dbg!(Self {
+            frame_buffer: fbo,
+            texture: texture_color_buffer,
+            rbo
+        })
+    }
+}
+
 #[inline(always)]
 pub fn mouse_clicked(engine: &Engine, button: &MouseButton) -> bool {
     let result = engine.mouse_button_keys.iter().find(|b| *button == **b);
-
-    match result {
-        Some(_) => true,
-        None => false,
-    }
+    result.is_some()
 }
 
 pub struct Engine {
@@ -123,8 +182,8 @@ pub struct Engine {
 
     pub ui_view: Vec<Box<dyn View>>,
     pub ui_tree: Option<*mut UITree>,
-    pub ui_frame_buffer: Option<u32>,
-    pub scene_frame_buffer: u32,
+    pub ui_render_object: Option<FrameRenderObject>,
+    pub scene_render_object: FrameRenderObject,
 }
 
 #[inline(always)]
@@ -149,15 +208,15 @@ fn check_button(button: &MouseButton, action: &Action, buttons: &mut Vec<MouseBu
 //TODO(teddy) have an init routine
 impl Engine {
     pub fn new(display: Display, font_face: FontFace) -> Self {
-        let mut fbo = 0;
 
-        unsafe {
-            gl::GenFramebuffers(1, &mut fbo);
-        }
+        let camera = Camera::new();
+        let scene_render_obj = unsafe {
+            FrameRenderObject::new(&camera)
+        };
 
         Self {
             display,
-            camera: Camera::new(),
+            camera,
             view_toggle: true,
             pressed_keys: vec![],
             mouse_button_keys: vec![],
@@ -169,9 +228,9 @@ impl Engine {
             cursor_mode_toggle: true,
             font_face,
             ui_view: vec![],
-            ui_frame_buffer: None,
+            ui_render_object: None,
             ui_tree: None,
-            scene_frame_buffer: fbo
+            scene_render_object: scene_render_obj
         }
     }
 
@@ -185,7 +244,7 @@ impl Engine {
         for event in event_manager.window_events.iter() {
             match event {
                 WindowEvent::Size(width, height) => {
-                    self.camera.view_port = (*width, *height);
+                    self.camera.view_port = ViewPortDimensions{  width: *width, height: *height };
                     unsafe { gl::Viewport(0, 0, *width, *height) }
                 }
 
@@ -400,7 +459,7 @@ enum CameraMovement {
     Right,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct ViewPortDimensions {
     pub width: i32,
     pub height: i32,
@@ -416,7 +475,7 @@ pub struct Camera {
     camera_up: Vector3<f32>,
     yaw: f32,
     pitch: f32,
-    pub view_port: (i32, i32),
+    pub view_port: ViewPortDimensions,
 }
 
 impl Camera {
@@ -432,13 +491,13 @@ impl Camera {
             pitch: 0.0,
             previous_cords: (0.0, 0.0),
             new_cords: Cords { x: 0.0, y: 0.0 },
-            view_port: (1000, 600),
+            view_port: ViewPortDimensions{ width: 1000, height: 600 },
         }
     }
 
     pub fn perspective(&self) -> Matrix4<f32> {
         Matrix4::new_perspective(
-            self.view_port.0 as f32 / self.view_port.1 as f32,
+            self.view_port.width as f32 / self.view_port.height as f32,
             self.fov,
             0.1,
             100000.0,
@@ -515,13 +574,13 @@ impl Camera {
 #[inline]
 fn compute_ray_from_mouse_cords(
     cords: (f32, f32),
-    screen_cords: (i32, i32),
+    screen_cords: ViewPortDimensions,
     projection_matrix: Matrix4<f32>,
     view_matrix: Matrix4<f32>,
 ) -> Vector3<f32> {
     //Normalize the device cordinates
-    let x = (2.0 * cords.0) / screen_cords.0 as f32 - 1.0;
-    let y = 1.0 - (2.0 * cords.1) / screen_cords.1 as f32;
+    let x = (2.0 * cords.0) / screen_cords.width as f32 - 1.0;
+    let y = 1.0 - (2.0 * cords.1) / screen_cords.height as f32;
 
     let ray_normalized_devices_cords: Vector4<f32> = Vector4::new(x, y, 1.0, 1.0);
 

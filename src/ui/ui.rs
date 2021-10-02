@@ -5,7 +5,7 @@ use glfw::MouseButton;
 use nalgebra::Vector3;
 use nphysics3d::utils::UserData;
 
-use crate::core::{Engine, FontFace};
+use crate::core::{Engine, FontFace, FrameRenderObject};
 use crate::game_world::world::AssetSource;
 use crate::game_world::world::World;
 use crate::renderer::draw::{draw_quad_with_default_shader, draw_text};
@@ -16,15 +16,11 @@ pub static mut UI_QUAD_SHADER_ID: u32 = 0;
 static mut ENGINE_PTR: *const Engine = null();
 
 macro_rules! font_shader {
-    () => {
-        String::from("font_shader")
-    };
+    () => { String::from("font_shader") };
 }
 
 macro_rules! quad_shader {
-    () => {
-        String::from("quad_shader")
-    };
+    () => { String::from("quad_shader") };
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -391,7 +387,7 @@ impl View for TextView {
         cords: Cords<f32>,
     ) -> bool {
         println!("Button click intersected");
-        dbg!(&cords);
+        //dbg!(&cords);
 
         if does_cursor_intersect(
             &cords,
@@ -461,8 +457,8 @@ fn does_cursor_intersect(
     let quad_position = (position.x as f32, position.y as f32);
 
 
-    dbg!(&cords);
-    dbg!(&quad_position);
+    //dbg!(&cords);
+    //dbg!(&quad_position);
     let min_x = quad_position.0;
     let min_y = quad_position.1;
 
@@ -493,13 +489,11 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
     unsafe {
         ENGINE_PTR = engine;
 
-        gl::GenFramebuffers(1, &mut fbo);
     }
 
-    if fbo == 0 {
-        return Err(UIError::UnableToInitializeFramebuffer);
+    unsafe {
+        engine.ui_render_object = Some(FrameRenderObject::new(&engine.camera));
     }
-    engine.ui_frame_buffer = Some(fbo);
 
     let _ = world.resources.add_resource(
         AssetSource::Shader(

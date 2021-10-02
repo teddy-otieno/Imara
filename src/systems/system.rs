@@ -18,6 +18,11 @@ pub trait System {
         delta_time: f32,
     );
 
+    fn init(&mut self, world: &mut World, engine: &mut Engine) -> Result<(), String> {
+        Ok(())
+    }
+
+
     fn name(&self) -> String;
 }
 

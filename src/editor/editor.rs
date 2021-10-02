@@ -70,7 +70,7 @@ impl Editor {
 
         for (i, name) in objs.into_iter().filter(|s| s.ends_with(".obj")).enumerate() {
             let mut asset_name_text_view = Box::new(TextView::new(
-                format!("text_{}", i).into_boxed_str(),
+                format!("text_{}", name).into_boxed_str(),
                 name.clone(),
                 ViewPosition { x: 10, y: 10 },
                 1.0,
@@ -185,7 +185,7 @@ pub fn update_editor(
         let component = world.components.positionable[id].as_ref().unwrap();
 
         let camera = &engine.camera;
-        let (width, height) = camera.view_port;
+        let ViewPortDimensions{  width, height } = camera.view_port;
 
         //TODO(Teddy) fix tomorrow
         let result = compute_world_space_to_screen_space(

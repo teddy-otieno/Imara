@@ -341,7 +341,7 @@ impl View for TextView {
 
             let text_position = (
                 (self.view.position.x + self.view.padding) as f32,
-                (self.view.position.y - engine.font_face.font_size as i32 - self.view.padding) as f32,
+                (self.view.position.y + engine.font_face.font_size as i32 - self.view.padding) as f32,
             );
 
             let quad_size = (
@@ -687,7 +687,7 @@ impl View for SimpleUIContainer {
                     let view_dimensions = view.get_view_dimensions().unwrap_or(ViewDimens::zerod());
                     view.set_position(ViewPosition::new(
                         self.view.position.x,
-                        initial_y_position + view_dimensions.y,
+                        initial_y_position
                     ));
 
                     initial_y_position += view_dimensions.y;

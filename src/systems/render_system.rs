@@ -5,7 +5,7 @@ use std::ffi::{c_void, CString};
 use nalgebra::Vector3;
 
 use super::system::{System, SystemType};
-use crate::core::{Engine, Event, EventManager, EventType, ViewPortDimensions};
+use crate::core::{Engine, Event, EventManager, EventType, ViewPortDimensions, bind_texture};
 use crate::game_world::components::TransformComponent;
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::renderer::draw::*;
@@ -361,16 +361,15 @@ impl System for Renderer {
                 gl::Disable(gl::DEPTH_TEST);
                 gl::Disable(gl::STENCIL_TEST);
 
-                if let Some(shader_program) = self.screen_shader_program {
-                    gl::UseProgram(shader_program);
-                    shader_program
-                } else {
-                    panic!();
+                let program  = match self.screen_shader_program {
+                    Some(id) => {
+                        gl::UseProgram(id);
+                        id
+                    }
+                    _ => panic!(),
                 };
-
-                gl::ActiveTexture(gl::TEXTURE0);
-
-                gl::BindTexture(gl::TEXTURE_2D, engine.scene_render_object.texture);
+                bind_texture(&engine.scene_render_object, 0, program, "scene_shader");
+                bind_texture(engine.ui_render_object.as_ref().unwrap(), 1, program, "ui_texture");
                 gl::DrawArrays(gl::TRIANGLES, 0, 6);
 
                 gl::BindVertexArray(0);
@@ -387,7 +386,7 @@ unsafe fn draw_ui(engine: *mut Engine) {
     let ui_frame_buffer = eng.ui_render_object.as_ref().unwrap().frame_buffer;
 
     gl::BindFramebuffer(gl::FRAMEBUFFER, ui_frame_buffer);
-    gl::ClearColor(1.0, 0.1, 0.1, 1.0);
+    gl::ClearColor(0.0, 0.0, 0.0, 1.0);
     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
     gl::Enable(gl::DEPTH_TEST);
 

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::{c_void, CString};
 use std::hash::{Hash, Hasher};
 use std::ptr::null;
+use std::convert::TryInto;
 
 use freetype::freetype;
 use glfw::{Action, FlushedMessages, Key, MouseButton, WindowEvent};
@@ -107,7 +108,7 @@ pub struct Light {
 pub struct FrameRenderObject {
     pub frame_buffer: u32,
     pub texture: u32,
-    pub rbo: u32, 
+    pub rbo: u32,
 }
 
 impl FrameRenderObject {
@@ -173,6 +174,16 @@ impl FrameRenderObject {
         FrameRenderObject::new(ViewPortDimensions{width, height}, true)
     }
 }
+
+#[inline(always)]
+pub unsafe fn bind_texture(object: &FrameRenderObject, index: u32, program: u32, uniform_name: &str) {
+    let shader_uniform_name = CString::new(uniform_name).unwrap();
+    let uniform_location = gl::GetUniformLocation(program, shader_uniform_name.as_ptr());
+    gl::Uniform1i(uniform_location, index.try_into().unwrap());
+    gl::ActiveTexture(gl::TEXTURE0 + index); 
+    gl::BindTexture(gl::TEXTURE_2D, object.texture);
+}
+
 
 #[inline(always)]
 pub fn mouse_clicked(engine: &Engine, button: &MouseButton) -> bool {

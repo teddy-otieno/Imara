@@ -143,10 +143,7 @@ fn process_textured_mesh(obj: &TexturedObj) -> (Vec<TexturedVertex>, Vec<u32>) {
         z: point.z,
     };
 
-    assert!(
-        obj.vertices.len() == obj.normals.len() && obj.vertices.len() == obj.text_cords.len(),
-        true
-    );
+    assert!(obj.vertices.len() == obj.normals.len() && obj.vertices.len() == obj.text_cords.len(), true);
 
     let mut output_vertices = vec![];
 

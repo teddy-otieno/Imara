@@ -3,6 +3,7 @@ use std::ffi::{c_void, CString};
 use std::hash::{Hash, Hasher};
 use std::ptr::null;
 use std::convert::TryInto;
+use std::time::Instant;
 
 use freetype::freetype;
 use glfw::{Action, FlushedMessages, Key, MouseButton, WindowEvent};
@@ -14,6 +15,7 @@ use crate::gl_bindings::Display;
 use crate::systems::system::SystemType;
 use crate::ui::ui::{propagate_button_click, propagate_cursor_pos_to_ui, UITree, View};
 use crate::utils::Cords;
+use crate::logs::LogManager;
 
 #[derive(Debug, Clone, Copy)]
 pub enum EventType {
@@ -206,6 +208,7 @@ pub struct Engine {
     pub ui_tree: Option<*mut UITree>,
     pub ui_render_object: Option<FrameRenderObject>,
     pub scene_render_object: FrameRenderObject,
+    pub log_manager: LogManager,
 }
 
 #[inline(always)]
@@ -252,7 +255,8 @@ impl Engine {
             ui_view: vec![],
             ui_render_object: None,
             ui_tree: None,
-            scene_render_object: scene_render_obj
+            scene_render_object: scene_render_obj,
+            log_manager: LogManager::new()
         }
     }
 
@@ -796,4 +800,9 @@ pub unsafe fn load_fonts(font_size: u32) -> Result<FontFace, FontError> {
         font_size,
         chars: characters,
     })
+}
+
+
+pub fn log_time(message: &str, instant: Instant) -> () {
+    println!("{} = {}", message, instant.elapsed().as_millis());
 }

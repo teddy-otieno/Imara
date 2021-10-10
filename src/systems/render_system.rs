@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::ffi::{c_void, CString};
+use std::time::Instant;
 
 use nalgebra::Vector3;
 
 use super::system::{System, SystemType};
-use crate::core::{Engine, Event, EventManager, EventType, ViewPortDimensions, bind_texture};
+use crate::core::{Engine, EventManager, EventType, ViewPortDimensions, bind_texture, log_time};
 use crate::game_world::components::TransformComponent;
 use crate::game_world::world::{EntityID, MeshType, World};
+use crate::logs::{LogManager, Logable};
 use crate::renderer::draw::*;
 
 #[macro_export]
@@ -22,6 +24,16 @@ macro_rules! SCREEN_SHADER {
     () => {
         String::from("screen_shader")
     };
+}
+
+struct RenderSystemLogObject { 
+    text: String
+}
+
+impl Logable for RenderSystemLogObject {
+    fn to_string(&self) -> String {
+        self.text.clone()
+    }
 }
 
 pub struct Renderer {
@@ -44,6 +56,10 @@ impl Renderer {
     unsafe fn draw_entities(&mut self, engine_ptr: *mut Engine, world: &mut World) {
         let engine = engine_ptr.as_mut().unwrap();
 
+        if world.entities.len() == 0 {
+            return;
+        }
+
         gl::BindFramebuffer(gl::FRAMEBUFFER, engine.scene_render_object.frame_buffer);
         //gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
         gl::ClearColor(0.1, 0.1, 0.1, 1.0);
@@ -52,18 +68,14 @@ impl Renderer {
 
         for i in world.entities.iter() {
             let render_component = match &world.components.renderables[*i] {
-                Some(component) => component,
-                None => continue,
+                Some(component) if component.should_update => component,
+                _ => continue,
             };
 
             let transform_component = match &world.components.positionable[*i] {
                 Some(component) => component,
                 None => continue,
             };
-
-            if !render_component.should_update {
-                continue;
-            }
 
             if render_component.textures.len() == 0 {
                 let render_object = match self.normal_objects.get(i) {
@@ -269,8 +281,7 @@ impl System for Renderer {
         String::from("Renderer")
     }
 
-
-    fn init(&mut self, world: &mut World, _engine: &mut Engine) -> Result<(), String> {
+    fn init(&mut self, world: &mut World, engine: &mut Engine) -> Result<(), String> {
         let shader_name = SCREEN_SHADER!();
 
         let resources = world.resources.shaders.read().unwrap();
@@ -325,6 +336,7 @@ impl System for Renderer {
         self.screen_vao = Some(vao);
         self.screen_shader_program = Some(screen_shader);
 
+
         Ok(())
 
     }
@@ -341,9 +353,16 @@ impl System for Renderer {
         self.handle_system_events(event_manager, world);
 
         unsafe {
+            let instant = Instant::now();
             self.draw_entities(engine, world);
-            draw_ui(engine);
+            draw_ui(engine, &mut engine.log_manager);
+            let time = instant.elapsed().as_millis();
 
+            let log_manager = &mut engine.log_manager;
+            log_manager.add_log((
+                format!("render_system"), 
+                Box::new(RenderSystemLogObject{text: format!("RENDER_SYSTEM: {} ms", time)})
+            ));
             //Note(teddy) I guess the texturing is not working
             //Note(teddy) Drawing the screen shadee
             //Using the sceen texture
@@ -372,6 +391,7 @@ impl System for Renderer {
                 bind_texture(engine.ui_render_object.as_ref().unwrap(), 1, program, "ui_texture");
                 gl::DrawArrays(gl::TRIANGLES, 0, 6);
 
+
                 gl::BindVertexArray(0);
             }
         }
@@ -380,8 +400,9 @@ impl System for Renderer {
 
 
 
+
 //TODO(teddy) Draw on a seperate frame buffer
-unsafe fn draw_ui(engine: *mut Engine) {
+unsafe fn draw_ui(engine: *mut Engine, log_manager: *mut LogManager) {
     let eng = engine.as_mut().unwrap();
     let ui_frame_buffer = eng.ui_render_object.as_ref().unwrap().frame_buffer;
 
@@ -390,6 +411,7 @@ unsafe fn draw_ui(engine: *mut Engine) {
     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
     gl::Enable(gl::DEPTH_TEST);
 
+    log_manager.as_ref().unwrap().update_ui_logs_view(eng);
     //TODO(Teddy) Do all the buffer clearing operations
 
     if let Some(view) = &mut eng.get_ui_tree().unwrap().root {

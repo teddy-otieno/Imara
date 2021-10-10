@@ -1,5 +1,7 @@
 use std::ffi::c_void;
 use std::ptr::null;
+use std::rc::Rc;
+use std::any::Any;
 
 use glfw::MouseButton;
 use nalgebra::Vector3;
@@ -16,11 +18,15 @@ pub static mut UI_QUAD_SHADER_ID: u32 = 0;
 static mut ENGINE_PTR: *const Engine = null();
 
 macro_rules! font_shader {
-    () => { String::from("font_shader") };
+    () => {
+        String::from("font_shader")
+    };
 }
 
 macro_rules! quad_shader {
-    () => { String::from("quad_shader") };
+    () => {
+        String::from("quad_shader")
+    };
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -45,11 +51,9 @@ pub type ViewDimens = Dimensions<i32>;
 pub type ViewPosition = Dimensions<i32>;
 
 pub trait View {
-
     fn get_id(&self) -> &str;
     fn update(&mut self, engine: &Engine) -> UIResult;
     fn compute_intersect_with_cursor_cords(&mut self, engine: &Engine, cords: &Cords<f32>) {
-
         let id = String::from(self.get_id());
         let view_object = self.get_view_object_mut();
         if does_cursor_intersect(
@@ -85,10 +89,11 @@ pub trait View {
     fn get_view_dimensions(&self) -> Option<ViewDimens> {
         None
     }
-    fn set_position(&mut self, _position: ViewPosition) {}
+    fn set_position(&mut self, _position: ViewPosition);
     fn get_position(&self) -> Option<ViewPosition>;
+    fn get_element_by_id(&mut self, id: &str) -> Option<Rc<&mut dyn View>>;
+    fn as_any(&mut self) -> Box<&mut dyn Any>;
 }
-
 ///Note(teddy) Container specific methods.
 ///Container is also a view so each container
 ///must implement the View Trait
@@ -98,6 +103,12 @@ pub trait ViewContainer: View {
 
     ///Note(teddy) Iterate throught the entire container children to find the view id
     fn get_view_by_id(&self, child_id: &str) -> Result<&Box<dyn View>, UIError>;
+}
+
+#[inline(always)]
+pub fn cast_view<'a, 'b, T: View + 'b +'static>(view: &'a mut Rc<&mut dyn View>) -> Option<&'a mut T> {
+    let view_obj = Rc::get_mut(view).unwrap();
+    view_obj.as_any().downcast_mut::<T>()
 }
 
 pub struct UITree {
@@ -112,6 +123,14 @@ impl UITree {
             root: None,
             focused_view: None,
         }
+    }
+
+    pub fn find_element(&mut self, id: &str) -> Option<Rc<&mut dyn View>> {
+        if let Some(root) = &mut self.root {
+            return root.get_element_by_id(id);
+        }
+
+        None
     }
 }
 
@@ -128,7 +147,6 @@ enum CursorState {
     Neither,
 }
 
-
 pub struct ViewObject {
     cursor_hover_state: CursorState,
     pub id: Box<str>,
@@ -143,17 +161,15 @@ pub struct ViewObject {
 }
 
 impl ViewObject {
-
     fn new(
-        id: Box<str>, 
-        position: ViewDimens, 
-        size: Option<ViewDimens>, 
-        padding: i32, 
+        id: Box<str>,
+        position: ViewDimens,
+        size: Option<ViewDimens>,
+        padding: i32,
         scale: f32,
         background_color: Box<[f32; 3]>,
-        z_index: Option<u32>
+        z_index: Option<u32>,
     ) -> Self {
-
         unsafe {
             let (background_vao, background_vbo) = initialize_background_buffers();
 
@@ -167,7 +183,7 @@ impl ViewObject {
                 background_vbo,
                 background_color,
                 cursor_hover_state: CursorState::Neither,
-                z_index
+                z_index,
             }
         }
     }
@@ -182,10 +198,9 @@ pub struct TextView {
     cursor_hover: CursorState,
     view: ViewObject,
 
-    pub text: String,
+    text: String,
     pub color: Option<Vector3<f32>>,
     //Note(teddy) Incase the size is not passed, use the fonts width and heights and update this value
-
     pub on_hover: Option<Box<dyn FnMut(*mut Self)>>,
     pub on_mouse_leave: Option<Box<dyn FnMut(*mut Self)>>,
     pub on_click: Option<Box<dyn Fn(*mut Self)>>,
@@ -275,7 +290,15 @@ impl TextView {
             let (background_vao, background_vbo) = initialize_background_buffers();
 
             Self {
-                view: ViewObject::new(id, position, size, padding, scale, Box::new([0.4, 0.4, 0.4]), None),
+                view: ViewObject::new(
+                    id,
+                    position,
+                    size,
+                    padding,
+                    scale,
+                    Box::new([0.4, 0.4, 0.4]),
+                    None,
+                ),
                 text,
                 text_height: engine.font_face.font_size as u32,
                 text_length: length_of_text,
@@ -293,6 +316,11 @@ impl TextView {
             }
         }
     }
+
+    pub fn set_text(&mut self, new_text: String, font_face: &FontFace) {
+        self.text = new_text;
+        self.text_length = get_the_length_of_text(&self.text, &font_face);
+    }
 }
 
 macro_rules! button_clicked {
@@ -302,12 +330,17 @@ macro_rules! button_clicked {
 }
 
 impl View for TextView {
+    fn as_any(&mut self) -> Box<&mut dyn Any> { Box::new(self) }
     fn get_id(&self) -> &str {
         &(*self.view.id)
     }
 
-    fn get_view_object(&self) -> &ViewObject { &self.view }
-    fn get_view_object_mut(&mut self) -> &mut ViewObject { &mut self.view }
+    fn get_view_object(&self) -> &ViewObject {
+        &self.view
+    }
+    fn get_view_object_mut(&mut self) -> &mut ViewObject {
+        &mut self.view
+    }
 
     fn update(&mut self, engine: &Engine) -> UIResult {
         let view: *mut TextView = self;
@@ -341,7 +374,8 @@ impl View for TextView {
 
             let text_position = (
                 (self.view.position.x + self.view.padding) as f32,
-                (self.view.position.y + engine.font_face.font_size as i32 - self.view.padding) as f32,
+                (self.view.position.y + engine.font_face.font_size as i32 - self.view.padding)
+                    as f32,
             );
 
             let quad_size = (
@@ -370,7 +404,6 @@ impl View for TextView {
                 // &[0.2, 0.2, 0.2],
                 &self.view.background_color,
             );
-
         }
 
         Ok(())
@@ -397,12 +430,10 @@ impl View for TextView {
         ) {
             //Note(teddy) Left Click
             let self_ptr: *mut TextView = self;
-            if let Some(_) = button_clicked!(clicked_buttons,MouseButton::Button1) {
-
+            if let Some(_) = button_clicked!(clicked_buttons, MouseButton::Button1) {
                 if let Some(func) = &self.on_click {
                     func(self_ptr);
                 }
-
             }
             if let Some(_) = button_clicked!(clicked_buttons, MouseButton::Button2) {
                 //Right Click
@@ -410,7 +441,7 @@ impl View for TextView {
                 if let Some(func) = &self.on_right_click {
                     func(self_ptr);
                 }
-            } 
+            }
             if let Some(_) = button_clicked!(clicked_buttons, MouseButton::Button3) {
                 //Middleclick
                 println!("Middle click was clicked");
@@ -441,6 +472,10 @@ impl View for TextView {
     fn get_position(&self) -> Option<ViewPosition> {
         Some(self.view.position)
     }
+
+    fn get_element_by_id(&mut self, id: &str) -> Option<Rc<&mut dyn View>> {
+        if id == self.get_id() { Some(Rc::new(self)) } else { None }
+    }
 }
 
 fn does_cursor_intersect(
@@ -455,7 +490,6 @@ fn does_cursor_intersect(
     );
 
     let quad_position = (position.x as f32, position.y as f32);
-
 
     //dbg!(&cords);
     //dbg!(&quad_position);
@@ -488,7 +522,6 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
 
     unsafe {
         ENGINE_PTR = engine;
-
     }
 
     unsafe {
@@ -576,10 +609,18 @@ impl SimpleUIContainer {
         position: ViewPosition,
         orientation: Orientation,
         padding: i32,
-        scale: f32
+        scale: f32,
     ) -> Self {
         Self {
-            view: ViewObject::new(id, position, dimensions, padding, scale, Box::new([1.0, 1.0, 1.0]), None),
+            view: ViewObject::new(
+                id,
+                position,
+                dimensions,
+                padding,
+                scale,
+                Box::new([1.0, 1.0, 1.0]),
+                None,
+            ),
             children: vec![],
             orientation,
         }
@@ -627,6 +668,11 @@ impl SimpleUIContainer {
 }
 
 impl View for SimpleUIContainer {
+    fn set_position(&mut self, position: ViewPosition) {
+        self.view.position = position;
+    }
+
+    fn as_any(&mut self) -> Box<&mut dyn Any> { Box::new(self) }
 
     fn get_id(&self) -> &str {
         &(self.view.id)
@@ -638,10 +684,8 @@ impl View for SimpleUIContainer {
         button: &Vec<MouseButton>,
         cords: Cords<f32>,
     ) -> bool {
-
         println!("Hello darkness my old friend");
-        let container_position =self.view.position;
-
+        let container_position = self.view.position;
 
         // println!(self.get_view_object().)
         if dbg!(does_cursor_intersect(
@@ -651,7 +695,6 @@ impl View for SimpleUIContainer {
             self.view.size.unwrap_or(ViewDimens::zerod()),
             0,
         )) {
-
             println!("Intersection was successful");
             for view in &mut self.children {
                 view.handle_button_click(engine, button, cords);
@@ -662,8 +705,7 @@ impl View for SimpleUIContainer {
     }
 
     fn update(&mut self, engine: &Engine) -> UIResult {
-
-        let quad_size  = self.view.size;
+        let quad_size = self.view.size;
         let default_dimensions = ViewDimens::new(10, 10);
 
         let quad_size = (
@@ -676,7 +718,6 @@ impl View for SimpleUIContainer {
             self.view.position.y as f32 + quad_size.0,
         );
 
-
         //TODO(teddy) This initial position will be the position of the container
         //TODO(teddy) optimize this to prevent recalculations
         match self.orientation {
@@ -685,10 +726,7 @@ impl View for SimpleUIContainer {
 
                 for view in self.children.iter_mut() {
                     let view_dimensions = view.get_view_dimensions().unwrap_or(ViewDimens::zerod());
-                    view.set_position(ViewPosition::new(
-                        self.view.position.x,
-                        initial_y_position
-                    ));
+                    view.set_position(ViewPosition::new(self.view.position.x, initial_y_position));
 
                     initial_y_position += view_dimensions.y;
                     view.update(engine).unwrap();
@@ -719,8 +757,8 @@ impl View for SimpleUIContainer {
                 0.99,
                 quad_position,
                 quad_size,
-                // &[0.2, 0.2, 0.2],
-                &[0.6, 0.3, 0.3],
+                &[0.1, 0.1, 0.1],
+                // &[0.6, 0.3, 0.3],
             );
         }
 
@@ -743,9 +781,28 @@ impl View for SimpleUIContainer {
         None
     }
 
-    fn get_view_object(&self) -> &ViewObject { &self.view }
+    fn get_view_object(&self) -> &ViewObject {
+        &self.view
+    }
 
-    fn get_view_object_mut(&mut self) -> &mut ViewObject { &mut self.view }
+    fn get_view_object_mut(&mut self) -> &mut ViewObject {
+        &mut self.view
+    }
+
+    fn get_element_by_id(&mut self, id: &str) -> Option<Rc<&mut dyn View>> {
+
+        if self.get_id() == id {
+            return Some(Rc::new(self));
+        }
+
+        for element in &mut self.children {
+            if let Some(el) = element.get_element_by_id(id) {
+                return Some(el);
+            }
+        }
+
+        None
+    }
 }
 
 impl ViewContainer for SimpleUIContainer {

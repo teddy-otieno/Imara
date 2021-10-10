@@ -16,6 +16,8 @@ use super::components::*;
 use crate::core::{Event, EventManager, EventType};
 use crate::obj_parser::{load_obj, NormalObj, TexturedObj};
 use crate::renderer::shaders::create_shader;
+use crate::logs::LogManager;
+use crate::logs::Logable;
 
 const WORLD_LEVELS_DIR: &'static str = "./assets/levels/";
 pub const OBJ_ASSETS_DIR: &'static str = "./assets/objects/";
@@ -81,20 +83,38 @@ impl DerefMut for Mesh {
     }
 }
 
+struct ResourceLogs {
+
+}
+
+impl ResourceLogs {
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Logable for ResourceLogs {
+    fn to_string(&self) -> String {
+        String::new()
+    }
+}
+
 type MeshDataContainer = HashMap<String, Mesh>;
 type ShaderContainer = HashMap<String, Option<u32>>;
 //Render component will hold the mesh id and a copy of the mesh's vertex data
 pub struct Resources {
     pub mesh_data: Arc<RwLock<MeshDataContainer>>,
     pub shaders: Arc<RwLock<ShaderContainer>>,
+    log_manager: *mut LogManager,
 }
 
 impl Resources {
-    pub fn new() -> Self {
+    pub fn new(log_manager: *mut LogManager) -> Self {
         //Note(ted) Loading and compiling the shaders
         Self {
             mesh_data: Arc::new(RwLock::new(HashMap::new())),
             shaders: Arc::new(RwLock::new(HashMap::new())),
+            log_manager
         }
     }
 
@@ -206,11 +226,11 @@ pub struct World {
 }
 
 impl World {
-    pub fn new(event_manager: *mut EventManager) -> Self {
+    pub fn new(event_manager: *mut EventManager, log_manager: *mut LogManager) -> Self {
         Self {
             event_manager,
             font_shader: 0,
-            resources: Resources::new(),
+            resources: Resources::new(log_manager),
             components: Components::new(ENTITY_SIZE),
             entities: LinkedList::new(),
             deleted_entities: LinkedList::new(),

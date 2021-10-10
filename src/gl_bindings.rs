@@ -45,7 +45,7 @@ pub fn init_gl_window_context(initial_size: (u32, u32), window_name: &str) -> Di
     };
 
 
-    glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
+    // glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
 
     Display {
         glfw,

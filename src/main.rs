@@ -9,6 +9,7 @@ extern crate serde_json;
 
 #[macro_use]
 mod core;
+mod logs;
 mod editor;
 mod game_world;
 mod gl_bindings;
@@ -29,6 +30,7 @@ use game_world::world::{AssetSource, World};
 use gl_bindings::Display;
 use systems::physics::Physics;
 use systems::render_system::Renderer;
+use logs::Logable;
 
 #[macro_use]
 use systems::system::{System, Systems};
@@ -51,8 +53,7 @@ fn run(display: Display) {
 
     let mut engine = Engine::new(display, fonts);
     let mut event_manager = EventManager::new();
-    let ev_pointer: *const EventManager = &event_manager;
-    let mut world = World::new(ev_pointer as *mut EventManager);
+    let mut world = World::new(&mut event_manager, &mut engine.log_manager);
     let mut systems = Systems::new();
 
     world.resources.add_resource(
@@ -115,6 +116,8 @@ fn run(display: Display) {
         gl::StencilOp(gl::KEEP, gl::KEEP, gl::REPLACE);
     }
 
+    engine.log_manager.add_log((String::from("main"), Box::new(MainLoopLogObject{text: String::new()})));
+
     while !engine.display.window.should_close() {
         let time = Instant::now();
         engine.display.glfw.poll_events();
@@ -135,9 +138,18 @@ fn run(display: Display) {
 
         if frame_time >= 1000000000 {
             //println!("{} : Frames per second", ticks);
-            println!("Avg. Frame Time {} ns", frame_time / ticks);
+            let main_log = format!("Avg. Frame Time {} ms", frame_time / (ticks * 1_000_000));
+            engine.log_manager.add_log((String::from("main"), Box::new(MainLoopLogObject{text: main_log})));
             frame_time = 0;
             ticks = 0;
         }
     }
+}
+
+struct MainLoopLogObject {
+    text: String
+}
+
+impl Logable for MainLoopLogObject {
+    fn to_string(&self) -> String  { self.text.clone() }
 }

@@ -44,6 +44,15 @@ impl Editor {
             1.0
         ));
 
+        let log_container = Box::new(SimpleUIContainer::new(
+            String::from("ui_log").into_boxed_str(),
+            None,
+            ViewPosition::new(0, 0),
+            Orientation::Vertical,
+            10,
+            1.0
+        ));
+
         let mut text_view = Box::new(TextView::new(
             String::from("text_1").into_boxed_str(),
             String::from("Objects"),
@@ -104,9 +113,13 @@ impl Editor {
                 self_ref.selected_entity = Some(id);
             }));
 
-            simple_container.add_child(asset_name_text_view)
+            simple_container.add_child(asset_name_text_view);
         }
-
+        let sep = TextView::new("logs".to_owned().into_boxed_str(), format!("------------------------------------------------------------------------"), ViewPosition::zerod(), 1.0, 10);
+        let text_view = TextView::new("logs".to_owned().into_boxed_str(), format!("Logs"), ViewPosition::zerod(), 1.0, 10);
+        simple_container.add_child(Box::new(sep));
+        simple_container.add_child(Box::new(text_view));
+        simple_container.add_child(log_container);
         self.ui_tree.root = Some(simple_container);
     }
 }

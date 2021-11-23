@@ -115,8 +115,18 @@ impl Editor {
 
             simple_container.add_child(asset_name_text_view);
         }
+
+        let mut save_world = TextView::new("save".to_owned().into_boxed_str(), format!("Save world"), ViewPosition::zerod(), 1.0, 10);
+
+        let world_ptr: *mut World = world;
+        save_world.on_click = Some(Box::new( move |view: *mut TextView| unsafe {
+            let world_ref = world_ptr.as_mut().unwrap();
+            world_ref.save();
+        }));
+
         let sep = TextView::new("logs".to_owned().into_boxed_str(), format!("------------------------------------------------------------------------"), ViewPosition::zerod(), 1.0, 10);
         let text_view = TextView::new("logs".to_owned().into_boxed_str(), format!("Logs"), ViewPosition::zerod(), 1.0, 10);
+        simple_container.add_child(Box::new(save_world));
         simple_container.add_child(Box::new(sep));
         simple_container.add_child(Box::new(text_view));
         simple_container.add_child(log_container);

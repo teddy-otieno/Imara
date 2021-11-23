@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::{Arc, RwLock};
 use std::thread;
+use std::io::Write;
 use std::{
     collections::{HashMap, LinkedList},
     ops::{Deref, DerefMut},
@@ -258,6 +259,108 @@ impl World {
         event_manager.add_event(Event::new(EventType::EntityCreated(id)));
         id
     }
+
+    pub fn save(&mut self) {
+        let mut world_entities = File::create("game_world").unwrap();
+
+        let headers = StorageFileHeader{ total_entities: 100 };
+        let header_pointer = &headers as *const _ as *const u8;
+        let slice = unsafe { std::slice::from_raw_parts(header_pointer, std::mem::size_of::<StorageFileHeader>()) };
+        world_entities.write(slice).unwrap();
+
+
+        for entity_id in &self.entities {
+
+            let entity_object = Entity {
+                transform: if let Some(transform_component) = &self.components.positionable[*entity_id] {
+                    TransformData {
+                        is_present: 1,
+                        translation: [transform_component.position.translation.x, transform_component.position.translation.y, transform_component.position.translation.z],
+                        rotation: [0.0, 0.0, 0.0],
+                        scale: transform_component.scale
+                    }
+                } else {
+                    TransformData {
+                        is_present: 0,
+                        translation: [0.0; 3],
+                        rotation: [0.0; 3],
+                        scale: 1.0
+                    }
+
+                },
+
+                render: if let Some(render_component) = &self.components.renderables[*entity_id] {
+
+                    assert!(render_component.mesh_label.len() <= 1024, "{}", true);
+                    assert!(render_component.shader_label.len() <= 1024,"{}", true);
+                    assert!(render_component.shader_label.len() <= 1024, "{}", true);
+
+                    let textures_labels: Vec<[u8; 1024]> =  render_component.textures
+                        .iter()
+                        .map(|a| {
+                            copy_string_to_bytes(a)
+                        }).collect();
+
+                    let mut textures: [[u8; 1024]; 8] = [[0; 1024]; 8];
+                    for (i, label) in textures_labels.iter().enumerate() {
+                        textures[i] = *label
+                    }
+
+                    RenderData {
+                        is_present: 1,
+                        mesh: copy_string_to_bytes(&render_component.mesh_label),
+                        shader: copy_string_to_bytes(&render_component.shader_label),
+                        textures: textures
+                    }
+                } else {
+                    RenderData::default()
+                },
+
+                physics: if let Some(physics_data) = &self.components.physics[*entity_id] {
+                    PhysicsData::default()
+                } else {
+                    PhysicsData::default()
+                }
+            };
+            write_entity_to_disk(&mut world_entities, entity_object);
+        }
+
+    }
+}
+
+fn copy_string_to_bytes(string: &String) -> [u8; 1024] {
+
+    let mut mesh_data_output: [u8; 1024] = [0; 1024];
+    for (i, char) in string.as_bytes().iter().enumerate() {
+        mesh_data_output[i] = *char;
+    }
+
+    mesh_data_output
+}
+
+#[inline(always)]
+fn write_entity_to_disk(
+    file: &mut File,
+    entities: Entity
+) {
+
+    println!("Writing entity to disk");
+    let entity_data = unsafe { any_as_u8_slice(&entities) };
+    file.write(&[3, 4, 5]);
+    file.write_all(entity_data).unwrap()
+}
+
+
+unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    std::slice::from_raw_parts(
+        (p as *const T) as *const u8,
+        std::mem::size_of::<T>()
+        )
+}
+
+#[repr(C)]
+pub struct StorageFileHeader {
+    total_entities: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -268,7 +371,6 @@ pub struct ShaderObject {
     geo: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct Level {
     entities: Vec<Entity>,
     shader_programs: Vec<ShaderObject>,
@@ -276,42 +378,74 @@ pub struct Level {
     font_shader: [String; 3],
 }
 
-#[derive(Serialize, Deserialize)]
+
+#[repr(C)]
 struct Entity {
     transform: TransformData,
-    physics: PhysicsData,
     render: RenderData,
+    physics: PhysicsData,
 }
 
-#[derive(Serialize, Deserialize)]
+
+#[repr(C)]
 struct TransformData {
+    is_present: u8,
     translation: [f32; 3],
     rotation: [f32; 3],
     scale: f32,
 }
 
-#[derive(Serialize, Deserialize)]
 enum Body {
-    Static,
-    Kinematic,
-    Dynamic,
+    Static = 0,
+    Kinematic = 1,
+    Dynamic = 2,
 }
 
-#[derive(Serialize, Deserialize)]
+
+#[repr(C)]
 struct PhysicsData {
+    is_present: u8,
     mass: f32,
     gravity: bool,
-    body: Body,
+    body: u8,
     velocity: [f32; 3],
     restitution: f32,
     friction: f32,
 }
 
-#[derive(Serialize, Deserialize)]
+impl PhysicsData {
+    fn default() -> Self {
+        Self {
+            is_present: 0,
+            mass: 0.0,
+            gravity: false,
+            body: 0,
+            velocity: [0.0; 3],
+            restitution: 0.0,
+            friction: 0.0
+        }
+    }
+}
+
+
+//Note(teddy) have a fixed size for the strings
+#[repr(C)]
 struct RenderData {
-    textures: Vec<String>,
-    mesh: String,
-    shader: String,
+    is_present: u8,
+    textures: [[u8; 1024]; 8],
+    mesh: [u8; 1024],
+    shader: [u8; 1024],
+}
+
+impl RenderData {
+    fn default() -> Self {
+        Self {
+            is_present: 0,
+            textures: [[0; 1024]; 8],
+            mesh: [0; 1024],
+            shader: [0; 1024]
+        }
+    }
 }
 
 pub enum WorldError {
@@ -320,6 +454,7 @@ pub enum WorldError {
     UnableToParseFile,
 }
 
+/*
 pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
     let path = format!("{}/{}", WORLD_LEVELS_DIR, source);
 
@@ -413,3 +548,4 @@ pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
 
     Ok(())
 }
+*/

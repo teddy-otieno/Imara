@@ -801,8 +801,3 @@ pub unsafe fn load_fonts(font_size: u32) -> Result<FontFace, FontError> {
         chars: characters,
     })
 }
-
-
-pub fn log_time(message: &str, instant: Instant) -> () {
-    println!("{} = {}", message, instant.elapsed().as_millis());
-}

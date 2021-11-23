@@ -6,7 +6,7 @@ use std::time::Instant;
 use nalgebra::Vector3;
 
 use super::system::{System, SystemType};
-use crate::core::{Engine, EventManager, EventType, ViewPortDimensions, bind_texture, log_time};
+use crate::core::{Engine, EventManager, EventType, ViewPortDimensions, bind_texture};
 use crate::game_world::components::TransformComponent;
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::logs::{LogManager, Logable};
@@ -145,7 +145,7 @@ impl Renderer {
                     draw_normal_object(
                         &world,
                         &render_component.shader_label,
-                        &engine.camera,
+                        &engine.camera      ,
                         render_object,
                         &transform_component,
                         &engine.dir_lights,

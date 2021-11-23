@@ -62,7 +62,6 @@ pub trait View {
             view_object.size.unwrap_or(ViewDimens::zerod()),
             view_object.padding,
         ) {
-            println!("{}", id);
             view_object.cursor_hover_state = CursorState::Hover;
         } else {
             if view_object.cursor_hover_state != CursorState::Neither {
@@ -354,7 +353,6 @@ impl View for TextView {
 
             CursorState::Leave => {
                 if let Some(func) = &mut self.on_mouse_leave {
-                    println!("Mouse leaving");
                     func(view);
                     self.cursor_hover = CursorState::Neither;
                 }
@@ -419,7 +417,6 @@ impl View for TextView {
         clicked_buttons: &Vec<MouseButton>,
         cords: Cords<f32>,
     ) -> bool {
-        println!("Button click intersected");
         //dbg!(&cords);
 
         if does_cursor_intersect(
@@ -437,7 +434,6 @@ impl View for TextView {
             }
             if let Some(_) = button_clicked!(clicked_buttons, MouseButton::Button2) {
                 //Right Click
-                println!("Right click was clicked");
                 if let Some(func) = &self.on_right_click {
                     func(self_ptr);
                 }
@@ -684,18 +680,16 @@ impl View for SimpleUIContainer {
         button: &Vec<MouseButton>,
         cords: Cords<f32>,
     ) -> bool {
-        println!("Hello darkness my old friend");
         let container_position = self.view.position;
 
         // println!(self.get_view_object().)
-        if dbg!(does_cursor_intersect(
+        if does_cursor_intersect(
             &cords,
             //self.position.unwrap_or(ViewDimens::zerod()),
             container_position,
             self.view.size.unwrap_or(ViewDimens::zerod()),
             0,
-        )) {
-            println!("Intersection was successful");
+        ) {
             for view in &mut self.children {
                 view.handle_button_click(engine, button, cords);
             }

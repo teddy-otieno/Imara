@@ -119,8 +119,11 @@ impl Editor {
         let mut save_world = TextView::new("save".to_owned().into_boxed_str(), format!("Save world"), ViewPosition::zerod(), 1.0, 10);
 
         let world_ptr: *mut World = world;
+        let engine_ptr: *const Engine = engine;
+
         save_world.on_click = Some(Box::new( move |view: *mut TextView| unsafe {
             let world_ref = world_ptr.as_mut().unwrap();
+            let engine_ref = engine_ptr.as_ref().unwrap();
             world_ref.save();
         }));
 

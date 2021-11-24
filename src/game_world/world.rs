@@ -14,7 +14,7 @@ use nphysics3d::object::BodyStatus;
 use serde::{Deserialize, Serialize};
 
 use super::components::*;
-use crate::core::{Event, EventManager, EventType};
+use crate::core::{Engine, Event, EventManager, EventType};
 use crate::obj_parser::{load_obj, NormalObj, TexturedObj};
 use crate::renderer::shaders::create_shader;
 use crate::logs::LogManager;
@@ -262,16 +262,9 @@ impl World {
 
     pub fn save(&mut self) {
         let mut world_entities = File::create("game_world").unwrap();
-
-        let headers = StorageFileHeader{ total_entities: 100 };
-        let header_pointer = &headers as *const _ as *const u8;
-        let slice = unsafe { std::slice::from_raw_parts(header_pointer, std::mem::size_of::<StorageFileHeader>()) };
-        world_entities.write(slice).unwrap();
-
-
-        for entity_id in &self.entities {
-
-            let entity_object = Entity {
+        let header = StorageFileHeader{ total_entities: self.entities.len() as u32 };
+        let entity_objects = self.entities.iter().map(|entity_id| {
+            Entity {
                 transform: if let Some(transform_component) = &self.components.positionable[*entity_id] {
                     TransformData {
                         is_present: 1,
@@ -321,9 +314,9 @@ impl World {
                 } else {
                     PhysicsData::default()
                 }
-            };
-            write_entity_to_disk(&mut world_entities, entity_object);
-        }
+            }
+        }).collect();
+        write_entity_to_disk(&mut world_entities, header, entity_objects);
 
     }
 }
@@ -341,13 +334,26 @@ fn copy_string_to_bytes(string: &String) -> [u8; 1024] {
 #[inline(always)]
 fn write_entity_to_disk(
     file: &mut File,
-    entities: Entity
+    header: StorageFileHeader,
+    entities: Vec<Entity>
 ) {
 
+    //Note(teddy) writing the file headers
+    let slice = unsafe { std::slice::from_raw_parts(
+       &header as *const _ as *const u8,
+        std::mem::size_of::<StorageFileHeader>()) 
+    };
+    file.write(slice).unwrap();
+
     println!("Writing entity to disk");
-    let entity_data = unsafe { any_as_u8_slice(&entities) };
-    file.write(&[3, 4, 5]);
-    file.write_all(entity_data).unwrap()
+    let entity_data = unsafe { 
+        entities
+            .iter()
+            .flat_map(|e: &Entity| any_as_u8_slice(e))
+            .map(|byte| *byte)
+            .collect::<Vec<u8>>() 
+    };
+    file.write_all(entity_data.as_slice()).unwrap()
 }
 
 
@@ -454,98 +460,7 @@ pub enum WorldError {
     UnableToParseFile,
 }
 
-/*
-pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
-    let path = format!("{}/{}", WORLD_LEVELS_DIR, source);
 
-    if !std::path::Path::new(&path).exists() {
-        return Err(WorldError::LevelNotFound);
-    }
-
-    let file = match File::open(path) {
-        Ok(file) => file,
-        Err(_) => return Err(WorldError::FailedToOpenLevel),
-    };
-
-    let buff_reader = BufReader::new(file);
-
-    let level: Level = match serde_json::from_reader(buff_reader) {
-        Ok(level) => level,
-        Err(_) => return Err(WorldError::UnableToParseFile),
-    };
-
-    let world_ref = unsafe { &mut *world };
-    for shader in level.shader_programs {
-        world_ref.resources.add_resource(
-            AssetSource::Shader(
-                shader.name,
-                shader.vert.clone(),
-                shader.vert.clone(),
-                shader.geo.clone(),
-            ),
-            true,
-        );
-    }
-
-    for (obj_type, source) in level.meshes {
-        world_ref
-            .resources
-            .add_resource(AssetSource::Mesh(obj_type, source), true);
-    }
-
-    for entity in level.entities.iter() {
-        let id = world_ref.create_entity();
-
-        let translation = Vector3::new(
-            entity.transform.translation[0],
-            entity.transform.translation[1],
-            entity.transform.translation[2],
-        );
-
-        let rotation = Vector3::new(
-            entity.transform.rotation[0],
-            entity.transform.rotation[1],
-            entity.transform.rotation[2],
-        );
-
-        world_ref.components.positionable[id] = Some(TransformComponent::new(
-            translation,
-            rotation,
-            entity.transform.scale,
-        ));
-
-        let get_status = |s: &Body| match s {
-            Body::Static => BodyStatus::Static,
-            Body::Kinematic => BodyStatus::Kinematic,
-            Body::Dynamic => BodyStatus::Dynamic,
-        };
-
-        let velocity = Vector3::new(
-            entity.physics.velocity[0],
-            entity.physics.velocity[1],
-            entity.physics.velocity[2],
-        );
-
-        let material = MaterialHandle::new(BasicMaterial::new(
-            entity.physics.restitution,
-            entity.physics.friction,
-        ));
-
-        world_ref.components.physics[id] = Some(PhysicsComponent::new(
-            entity.physics.mass,
-            entity.physics.gravity,
-            get_status(&entity.physics.body),
-            velocity,
-            material,
-        ));
-
-        //Hello world
-        world_ref.components.renderables[id] = Some(RenderComponent::new(
-            entity.render.mesh.clone(),
-            entity.render.shader.clone(),
-        ));
-    }
-
-    Ok(())
+fn load_game_world() -> Vec<Entity>{
+    unimplemented!()
 }
-*/

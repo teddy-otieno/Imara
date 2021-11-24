@@ -1,6 +1,7 @@
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::sync::{Arc, RwLock};
+use std::mem::MaybeUninit;
 use std::thread;
 use std::io::Write;
 use std::{
@@ -217,6 +218,7 @@ impl Resources {
     }
 }
 
+const GAME_WORLD_FILE_NAME: &'static str = "game_world";
 pub struct World {
     event_manager: *mut EventManager,
     pub font_shader: u32,
@@ -261,7 +263,7 @@ impl World {
     }
 
     pub fn save(&mut self) {
-        let mut world_entities = File::create("game_world").unwrap();
+        let mut world_entities = File::create(GAME_WORLD_FILE_NAME).unwrap();
         let header = StorageFileHeader{ total_entities: self.entities.len() as u32 };
         let entity_objects = self.entities.iter().map(|entity_id| {
             Entity {
@@ -318,6 +320,29 @@ impl World {
         }).collect();
         write_entity_to_disk(&mut world_entities, header, entity_objects);
 
+    }
+
+    pub fn load_world(&mut self) { 
+        let world_entities = File::open(GAME_WORLD_FILE_NAME).unwrap();
+        let mut buffered_reader = BufReader::new(world_entities);
+
+        let mut file_header_buffer: [u8; std::mem::size_of::<StorageFileHeader>()] = [0; std::mem::size_of::<StorageFileHeader>()];
+        buffered_reader.read_exact(&mut file_header_buffer).unwrap();
+
+        let file_header: MaybeUninit<StorageFileHeader> = MaybeUninit::zeroed();
+        let mut initialized_header = unsafe { file_header.assume_init() };
+
+        let initialized_header_ptr: *mut StorageFileHeader = &mut initialized_header;
+
+        unsafe {
+            std::ptr::copy(
+                file_header_buffer.as_ptr(), 
+                initialized_header_ptr as *mut u8, 
+                std::mem::size_of_val(&file_header_buffer)
+            )
+        };
+
+        println!("Testing loading entities {}", initialized_header.total_entities);
     }
 }
 
@@ -460,6 +485,101 @@ pub enum WorldError {
     UnableToParseFile,
 }
 
+/*
+pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
+    let path = format!("{}/{}", WORLD_LEVELS_DIR, source);
+
+    if !std::path::Path::new(&path).exists() {
+        return Err(WorldError::LevelNotFound);
+    }
+
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(_) => return Err(WorldError::FailedToOpenLevel),
+    };
+
+    let buff_reader = BufReader::new(file);
+
+    let level: Level = match serde_json::from_reader(buff_reader) {
+        Ok(level) => level,
+        Err(_) => return Err(WorldError::UnableToParseFile),
+    };
+
+    let world_ref = unsafe { &mut *world };
+    for shader in level.shader_programs {
+        world_ref.resources.add_resource(
+            AssetSource::Shader(
+                shader.name,
+                shader.vert.clone(),
+                shader.vert.clone(),
+                shader.geo.clone(),
+            ),
+            true,
+        );
+    }
+
+    for (obj_type, source) in level.meshes {
+        world_ref
+            .resources
+            .add_resource(AssetSource::Mesh(obj_type, source), true);
+    }
+
+    for entity in level.entities.iter() {
+        let id = world_ref.create_entity();
+
+        let translation = Vector3::new(
+            entity.transform.translation[0],
+            entity.transform.translation[1],
+            entity.transform.translation[2],
+        );
+
+        let rotation = Vector3::new(
+            entity.transform.rotation[0],
+            entity.transform.rotation[1],
+            entity.transform.rotation[2],
+        );
+
+        world_ref.components.positionable[id] = Some(TransformComponent::new(
+            translation,
+            rotation,
+            entity.transform.scale,
+        ));
+
+        let get_status = |s: &Body| match s {
+            Body::Static => BodyStatus::Static,
+            Body::Kinematic => BodyStatus::Kinematic,
+            Body::Dynamic => BodyStatus::Dynamic,
+        };
+
+        let velocity = Vector3::new(
+            entity.physics.velocity[0],
+            entity.physics.velocity[1],
+            entity.physics.velocity[2],
+        );
+
+        let material = MaterialHandle::new(BasicMaterial::new(
+            entity.physics.restitution,
+            entity.physics.friction,
+        ));
+
+        world_ref.components.physics[id] = Some(PhysicsComponent::new(
+            entity.physics.mass,
+            entity.physics.gravity,
+            get_status(&entity.physics.body),
+            velocity,
+            material,
+        ));
+
+        //Hello world
+        world_ref.components.renderables[id] = Some(RenderComponent::new(
+            entity.render.mesh.clone(),
+            entity.render.shader.clone(),
+        ));
+    }
+
+    Ok(())
+}
+*/
 
 fn load_game_world() -> Vec<Entity>{
     unimplemented!()

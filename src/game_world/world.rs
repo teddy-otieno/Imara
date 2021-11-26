@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::sync::{Arc, RwLock};
 use std::mem::MaybeUninit;
@@ -263,7 +263,12 @@ impl World {
     }
 
     pub fn save(&mut self) {
-        let mut world_entities = File::create(GAME_WORLD_FILE_NAME).unwrap();
+        let mut world_entities = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(GAME_WORLD_FILE_NAME)
+            .unwrap();
         let header = StorageFileHeader{ total_entities: self.entities.len() as u32 };
         let entity_objects = self.entities.iter().map(|entity_id| {
             Entity {
@@ -311,11 +316,11 @@ impl World {
                     RenderData::default()
                 },
 
-                physics: if let Some(physics_data) = &self.components.physics[*entity_id] {
-                    PhysicsData::default()
-                } else {
-                    PhysicsData::default()
-                }
+                // physics: if let Some(physics_data) = &self.components.physics[*entity_id] {
+                //     PhysicsData::default()
+                // } else {
+                //     PhysicsData::default()
+                // }
             }
         }).collect();
         write_entity_to_disk(&mut world_entities, header, entity_objects);
@@ -326,13 +331,14 @@ impl World {
         let world_entities = File::open(GAME_WORLD_FILE_NAME).unwrap();
         let mut buffered_reader = BufReader::new(world_entities);
 
-        let mut file_header_buffer: [u8; std::mem::size_of::<StorageFileHeader>()] = [0; std::mem::size_of::<StorageFileHeader>()];
+        const SIZE_OF_HEADER: usize = std::mem::size_of::<StorageFileHeader>();
+        let mut file_header_buffer: [u8; SIZE_OF_HEADER] = [0; SIZE_OF_HEADER];
         buffered_reader.read_exact(&mut file_header_buffer).unwrap();
 
         let file_header: MaybeUninit<StorageFileHeader> = MaybeUninit::zeroed();
         let mut initialized_header = unsafe { file_header.assume_init() };
-
         let initialized_header_ptr: *mut StorageFileHeader = &mut initialized_header;
+        println!("Size of buffer {}", buffered_reader.capacity());
 
         unsafe {
             std::ptr::copy(
@@ -341,8 +347,26 @@ impl World {
                 std::mem::size_of_val(&file_header_buffer)
             )
         };
-
         println!("Testing loading entities {}", initialized_header.total_entities);
+        buffered_reader.consume(SIZE_OF_HEADER);
+        //Able to retrieve entity elements
+        let entities: Vec<Entity> = Vec::with_capacity(initialized_header.total_entities as usize );
+        let size_of_entity: usize = std::mem::size_of::<Entity>();
+
+        let mut entities_data_buffer = vec![0; size_of_entity * initialized_header.total_entities as usize];
+
+        println!("Size of buffer {}", buffered_reader.capacity());
+        buffered_reader.read_exact(&mut entities_data_buffer).unwrap();
+        let number_of_entities = entities_data_buffer.len() / (size_of_entity);
+        assert!(dbg!(number_of_entities) as u32 == dbg!(initialized_header.total_entities), "{}", true);
+        let entities_data = entities_data_buffer.into_boxed_slice();
+        let entities = unsafe {Box::from_raw(Box::into_raw(entities_data) as *mut [Entity])};
+
+
+        for i in 0..number_of_entities {
+            println!("{:?}", entities[i]);
+        }
+
     }
 }
 
@@ -378,7 +402,13 @@ fn write_entity_to_disk(
             .map(|byte| *byte)
             .collect::<Vec<u8>>() 
     };
-    file.write_all(entity_data.as_slice()).unwrap()
+
+    let file_data = slice
+        .into_iter()
+        .chain(entity_data.iter())
+        .map(|byte| *byte)
+        .collect::<Vec<u8>>();
+    file.write_all(file_data.as_slice()).unwrap()
 }
 
 
@@ -411,14 +441,16 @@ pub struct Level {
 
 
 #[repr(C)]
+#[derive(Debug)]
 struct Entity {
     transform: TransformData,
     render: RenderData,
-    physics: PhysicsData,
+    // physics: PhysicsData,
 }
 
 
 #[repr(C)]
+#[derive(Debug)]
 struct TransformData {
     is_present: u8,
     translation: [f32; 3],
@@ -426,6 +458,7 @@ struct TransformData {
     scale: f32,
 }
 
+#[derive(Debug)]
 enum Body {
     Static = 0,
     Kinematic = 1,
@@ -434,6 +467,7 @@ enum Body {
 
 
 #[repr(C)]
+#[derive(Debug)]
 struct PhysicsData {
     is_present: u8,
     mass: f32,
@@ -461,6 +495,7 @@ impl PhysicsData {
 
 //Note(teddy) have a fixed size for the strings
 #[repr(C)]
+#[derive(Debug)]
 struct RenderData {
     is_present: u8,
     textures: [[u8; 1024]; 8],

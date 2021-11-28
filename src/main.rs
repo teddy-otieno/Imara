@@ -56,35 +56,33 @@ fn run(display: Display) {
     let mut world = World::new(&mut event_manager, &mut engine.log_manager);
     let mut systems = Systems::new();
 
-    world.resources.add_resource(
+    world.init_resource_loading_thread();
+    world.add_resource(
         AssetSource::Shader(
             default_shader!(),
             String::from("vert.glsl"),
             String::from("frag.glsl"),
             None,
         ),
-        false,
     );
 
-    world.resources.add_resource(
+    world.add_resource(
         AssetSource::Shader(
             String::from("highlight_shader"),
             String::from("vert.glsl"),
             String::from("border_frag.glsl"),
             None,
         ),
-        false,
     );
 
 
-    world.resources.add_resource(
+    world.add_resource(
         AssetSource::Shader(
             SCREEN_SHADER!(),
             String::from("screen_vert.glsl"),
             String::from("screen_frag.glsl"),
             None
             ),
-        false,
         );
 
     init_ui(&mut engine, &mut world).unwrap();

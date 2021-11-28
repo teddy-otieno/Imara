@@ -524,35 +524,38 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
         engine.ui_render_object = Some(FrameRenderObject::new(engine.camera.view_port, true));
     }
 
-    let _ = world.resources.add_resource(
+    let _ = world.add_resource(
         AssetSource::Shader(
             font_shader!(),
             String::from("font_vert.glsl"),
             String::from("font_frag.glsl"),
             None,
         ),
-        false,
     );
 
-    let _ = world.resources.add_resource(
+    let _ = world.add_resource(
         AssetSource::Shader(
             quad_shader!(),
             String::from("ui_quad_vert.glsl"),
             String::from("ui_quad_frag.glsl"),
             None,
         ),
-        false,
     );
 
-    let shader_container_ref = world.resources.shaders.read().unwrap();
+    let shader_container_ref = &world.resources.read().unwrap().shaders;
 
-    let shader_id = &shader_container_ref[&font_shader!()].unwrap();
-    let quad_shader = &shader_container_ref[&quad_shader!()].unwrap();
+    loop {
+        if shader_container_ref.get(&font_shader!()).is_some() && shader_container_ref.get(&quad_shader!()).is_some() {
+            let shader_id = &shader_container_ref[&font_shader!()].unwrap();
+            let quad_shader_id = &shader_container_ref[&quad_shader!()].unwrap();
+            unsafe {
+                SHADER_TEXT_ID = *shader_id;
+                UI_QUAD_SHADER_ID = *quad_shader_id;
+            };
+            break;
+        }
+    }
 
-    unsafe {
-        SHADER_TEXT_ID = *shader_id;
-        UI_QUAD_SHADER_ID = *quad_shader;
-    };
     Ok(())
 }
 

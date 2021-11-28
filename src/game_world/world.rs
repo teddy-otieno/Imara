@@ -1,6 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Condvar, RwLock, Mutex};
 use std::mem::MaybeUninit;
 use std::thread;
 use std::io::Write;
@@ -9,7 +9,8 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nalgebra::Vector3;
+use nalgebra::{Isometry3, Vector3};
+use ncollide3d::simba::scalar::SupersetOf;
 use nphysics3d::material::{BasicMaterial, MaterialHandle};
 use nphysics3d::object::BodyStatus;
 use serde::{Deserialize, Serialize};
@@ -105,116 +106,82 @@ type MeshDataContainer = HashMap<String, Mesh>;
 type ShaderContainer = HashMap<String, Option<u32>>;
 //Render component will hold the mesh id and a copy of the mesh's vertex data
 pub struct Resources {
-    pub mesh_data: Arc<RwLock<MeshDataContainer>>,
-    pub shaders: Arc<RwLock<ShaderContainer>>,
-    log_manager: *mut LogManager,
+    pub mesh_data: MeshDataContainer,
+    pub shaders: ShaderContainer,
 }
 
 impl Resources {
     pub fn new(log_manager: *mut LogManager) -> Self {
         //Note(ted) Loading and compiling the shaders
         Self {
-            mesh_data: Arc::new(RwLock::new(HashMap::new())),
-            shaders: Arc::new(RwLock::new(HashMap::new())),
-            log_manager
+            mesh_data: HashMap::new(),
+            shaders: HashMap::new(),
         }
     }
 
-    ///Threaded signal that the value is required immediately
-    pub fn add_resource(&mut self, resource: AssetSource, threaded: bool) -> ResourceResult {
-        //TODO(teddy) Spawn a thread to load the resources
 
-        let mesh_shrd_ref = Arc::clone(&self.mesh_data);
-        let shader_shrd_ref = Arc::clone(&self.shaders);
+    pub fn add_resource(&mut self, resource: AssetSource, threaded: bool) {
+
 
         match resource {
             AssetSource::Mesh(obj_type, location) => match obj_type {
                 ObjType::Normal => {
                     let result = location.clone();
 
-                    let mut mesh_container = mesh_shrd_ref.write().unwrap();
 
-                    match mesh_container.get_mut(&result) {
+                    match self.mesh_data.get_mut(&result) {
                         Some(mesh) if mesh.is_loaded => {
-                            return ResourceResult::Mesh(result);
+                            return;
                         }
 
                         None => {
                             //Note(teddy) Mesh is not created
-                            mesh_container.insert(location.clone(), Mesh::new());
+                            self.mesh_data.insert(location.clone(), Mesh::new());
                         }
 
                         _ => unreachable!(),
                     }
 
-                    drop(mesh_container); //Release lock
+                    // drop(mesh_container); //Release lock
 
-                    let mesh_ref_for_thread = Arc::clone(&self.mesh_data);
-                    let load_mesh_routine = move || {
-                        let mesh: NormalObj =
-                            load_obj(format!("{}{}", OBJ_ASSETS_DIR, location).as_str()).unwrap();
-
-                        let mut mesh_container = mesh_ref_for_thread.write().unwrap();
-                        let mesh_type_ref = mesh_container.get_mut(&location).unwrap();
-                        mesh_type_ref.mesh_type = Some(MeshType::Normal(mesh));
-                        drop(mesh_container);
-                    };
-
-                    let mut mesh_container = mesh_shrd_ref.write().unwrap();
                     //Note(teddy) Check whether the mesh already exists so that we can use the cached data
+                    let mesh: NormalObj =
+                        load_obj(format!("{}{}", OBJ_ASSETS_DIR, location).as_str()).unwrap();
 
-                    let mesh = mesh_container.get_mut(&result).unwrap();
-                    if threaded {
-                        thread::spawn(load_mesh_routine);
-                    } else {
-                        load_mesh_routine();
-                    }
-                    mesh.is_loaded = true;
-
-                    ResourceResult::Mesh(result)
+                    let mesh_type_ref = self.mesh_data.get_mut(&location).unwrap();
+                    mesh_type_ref.mesh_type = Some(MeshType::Normal(mesh));
+                    mesh_type_ref.is_loaded = true;
                 }
 
-                ObjType::Textured => ResourceResult::Mesh(String::new()),
+                ObjType::Textured => (),
             },
 
             AssetSource::Shader(name, vertex, fragment, geo) => {
                 let copy_for_result = name.clone();
-                {
-                    let mut shader_container = shader_shrd_ref.write().unwrap();
-                    shader_container.insert(name.clone(), None);
-                }
+                self.shaders.insert(name.clone(), None);
 
-                let load_and_compile_shader_routine = move || {
-                    //TODO(teddy) Handle this error gracefully
-                    let geometry_shader = match geo {
-                        Some(source) => Some(format!("{}{}", SHADER_ASSETS_DIR, source)),
-                        None => None,
-                    };
-
-                    let shader = unsafe {
-                        create_shader(
-                            format!("{}{}", SHADER_ASSETS_DIR, vertex),
-                            format!("{}{}", SHADER_ASSETS_DIR, fragment),
-                            geometry_shader,
-                        )
-                        .unwrap()
-                    };
-
-                    let mut shader_container = shader_shrd_ref.write().unwrap();
-                    shader_container.insert(name.clone(), Some(shader));
+                //TODO(teddy) Handle this error gracefully
+                let geometry_shader = match geo {
+                    Some(source) => Some(format!("{}{}", SHADER_ASSETS_DIR, source)),
+                    None => None,
                 };
 
-                if threaded {
-                    thread::spawn(load_and_compile_shader_routine);
-                } else {
-                    load_and_compile_shader_routine();
-                }
+                let shader = unsafe {
+                    create_shader(
+                        format!("{}{}", SHADER_ASSETS_DIR, vertex),
+                        format!("{}{}", SHADER_ASSETS_DIR, fragment),
+                        geometry_shader,
+                    )
+                    .unwrap()
+                };
 
-                ResourceResult::Shader(copy_for_result)
+                self.shaders.insert(name.clone(), Some(shader));
+
             }
 
-            AssetSource::Texture(_) => ResourceResult::Texture(String::new()),
+            AssetSource::Texture(_) => (),
         }
+
     }
 }
 
@@ -222,10 +189,11 @@ const GAME_WORLD_FILE_NAME: &'static str = "game_world";
 pub struct World {
     event_manager: *mut EventManager,
     pub font_shader: u32,
-    pub resources: Resources,
+    pub resources: Arc<RwLock<Resources>>,
     pub components: Components,
     pub entities: LinkedList<EntityID>,
     pub deleted_entities: LinkedList<EntityID>,
+    pub resource_queue: Arc<(Mutex<LinkedList<AssetSource>>, Condvar)>
 }
 
 impl World {
@@ -233,10 +201,11 @@ impl World {
         Self {
             event_manager,
             font_shader: 0,
-            resources: Resources::new(log_manager),
+            resources: Arc::new(RwLock::new(Resources::new(log_manager))),
             components: Components::new(ENTITY_SIZE),
             entities: LinkedList::new(),
             deleted_entities: LinkedList::new(),
+            resource_queue: Arc::new((Mutex::new(LinkedList::new()), Condvar::new()))
         }
     }
 
@@ -260,6 +229,61 @@ impl World {
         let event_manager = unsafe { self.event_manager.as_mut().unwrap() };
         event_manager.add_event(Event::new(EventType::EntityCreated(id)));
         id
+    }
+
+
+    pub fn add_resource(&mut self, resource: AssetSource) {
+        match resource {
+            AssetSource::Shader(name, vertex, fragment, geo) => {
+                let mut resource_manager = self.resources.write().unwrap();
+                let copy_for_result = name.clone();
+                resource_manager.shaders.insert(name.clone(), None);
+
+                //TODO(teddy) Handle this error gracefully
+                let geometry_shader = match geo {
+                    Some(source) => Some(format!("{}{}", SHADER_ASSETS_DIR, source)),
+                    None => None,
+                };
+
+                let shader = unsafe {
+                    create_shader(
+                        format!("{}{}", SHADER_ASSETS_DIR, vertex),
+                        format!("{}{}", SHADER_ASSETS_DIR, fragment),
+                        geometry_shader,
+                    )
+                    .unwrap()
+                };
+
+                resource_manager.shaders.insert(name.clone(), Some(shader));
+
+            }
+
+            _ => {
+                let (mutex, cond) = &*self.resource_queue;
+                let mut resource_queue = mutex.lock().unwrap();
+                resource_queue.push_back(resource);
+                cond.notify_one();
+            }
+        }
+    }
+
+    pub fn init_resource_loading_thread(&self) {
+        let resource_queue_ref = Arc::clone(&self.resource_queue);
+        let resources_ref = Arc::clone(&self.resources);
+
+        std::thread::spawn(move || {
+            let (mutex, cond) = &*resource_queue_ref;
+            loop {
+                let mut lock = mutex.lock().unwrap();
+                let mut resource_queue = cond.wait(lock).unwrap();
+                //TODO(teddy) add the loading code here
+                let mut resource_manager = resources_ref.write().unwrap();
+            
+                while let Some(item) = resource_queue.pop_front() {
+                    resource_manager.add_resource(item, false)
+                }
+            }
+        });
     }
 
     pub fn save(&mut self) {
@@ -328,45 +352,94 @@ impl World {
     }
 
     pub fn load_world(&mut self) { 
-        let world_entities = File::open(GAME_WORLD_FILE_NAME).unwrap();
-        let mut buffered_reader = BufReader::new(world_entities);
+        let SIZE_OF_HEADER: usize = std::mem::size_of::<StorageFileHeader>();
+        let SIZE_OF_ENTITY: usize = std::mem::size_of::<Entity>();
 
-        const SIZE_OF_HEADER: usize = std::mem::size_of::<StorageFileHeader>();
-        let mut file_header_buffer: [u8; SIZE_OF_HEADER] = [0; SIZE_OF_HEADER];
+        let world_entities_file = File::open(GAME_WORLD_FILE_NAME).unwrap();
+        let mut buffered_reader = BufReader::new(world_entities_file);
+
+        //Loading the file header to obtain configurations for the world
+        let mut file_header_buffer /*:[u8; SIZE_OF_HEADER] */ = vec![0; SIZE_OF_HEADER];
         buffered_reader.read_exact(&mut file_header_buffer).unwrap();
 
         let file_header: MaybeUninit<StorageFileHeader> = MaybeUninit::zeroed();
-        let mut initialized_header = unsafe { file_header.assume_init() };
-        let initialized_header_ptr: *mut StorageFileHeader = &mut initialized_header;
-        println!("Size of buffer {}", buffered_reader.capacity());
+        let mut storage_header = unsafe { file_header.assume_init() };
+        let storage_header_ptr: *mut StorageFileHeader = &mut storage_header;
+
 
         unsafe {
             std::ptr::copy(
                 file_header_buffer.as_ptr(), 
-                initialized_header_ptr as *mut u8, 
+                storage_header_ptr as *mut u8, 
                 std::mem::size_of_val(&file_header_buffer)
             )
         };
-        println!("Testing loading entities {}", initialized_header.total_entities);
         buffered_reader.consume(SIZE_OF_HEADER);
-        //Able to retrieve entity elements
-        let entities: Vec<Entity> = Vec::with_capacity(initialized_header.total_entities as usize );
-        let size_of_entity: usize = std::mem::size_of::<Entity>();
 
-        let mut entities_data_buffer = vec![0; size_of_entity * initialized_header.total_entities as usize];
-
-        println!("Size of buffer {}", buffered_reader.capacity());
+        //Loading the entities
+        let mut entities_data_buffer = vec![0; SIZE_OF_ENTITY  * storage_header.total_entities as usize];
         buffered_reader.read_exact(&mut entities_data_buffer).unwrap();
-        let number_of_entities = entities_data_buffer.len() / (size_of_entity);
-        assert!(dbg!(number_of_entities) as u32 == dbg!(initialized_header.total_entities), "{}", true);
-        let entities_data = entities_data_buffer.into_boxed_slice();
-        let entities = unsafe {Box::from_raw(Box::into_raw(entities_data) as *mut [Entity])};
 
+        dbg!(storage_header.total_entities);
+        dbg!(entities_data_buffer.len() / SIZE_OF_ENTITY);
 
-        for i in 0..number_of_entities {
-            println!("{:?}", entities[i]);
+        let entities_memory_area = entities_data_buffer.into_boxed_slice();
+        let loaded_entities = unsafe {Box::from_raw(Box::into_raw(entities_memory_area) as *mut [Entity])};
+
+        for i in 0..storage_header.total_entities {
+            // dbg!(&loaded_entities[i as usize].transform);
+            self.create_loaded_entity(&loaded_entities[i as usize]).unwrap();
+        }
+    }
+
+    fn create_loaded_entity(&mut self, entity: &Entity) -> Result<(), String> {
+
+        let new_entity = self.create_entity();
+
+        if entity.render.is_present == 1 {
+            let truncate_zeros = |it:[u8; 1024]|  {
+                it.into_iter()
+                    .filter(|c| **c != 0)
+                    .map(|c| *c)
+                    .collect::<Vec<u8>>()
+            };
+
+            let mesh_label_bytes = truncate_zeros(entity.render.mesh);
+            let shader_label_bytes = truncate_zeros(entity.render.shader);
+
+            let mesh_label = unsafe {
+                String::from_utf8(mesh_label_bytes).unwrap()
+            };
+            self.add_resource(AssetSource::Mesh(ObjType::Normal, mesh_label.clone()));
+            let shader_label = unsafe {
+                String::from_utf8(shader_label_bytes).unwrap()
+            };
+            //TODO(teddy) Not sure about how the mesh ids work
+
+            println!("Reached here");
+            self.components.renderables[new_entity] = Some(
+                RenderComponent::new(
+                    mesh_label.clone(),
+                    shader_label,
+                )
+            );
+
         }
 
+        if entity.transform.is_present == 1 {
+            let [x, y, z] = entity.transform.translation;
+            let [rot_x, rot_y, rot_z] = entity.transform.rotation;
+
+            self.components.positionable[new_entity] = Some(
+                TransformComponent::new(
+                     Vector3::new(x, y, z), 
+                     Vector3::new(rot_x, rot_y, rot_z),
+                     entity.transform.scale
+                )
+            )
+        }
+
+        Ok(())
     }
 }
 
@@ -388,13 +461,8 @@ fn write_entity_to_disk(
 ) {
 
     //Note(teddy) writing the file headers
-    let slice = unsafe { std::slice::from_raw_parts(
-       &header as *const _ as *const u8,
-        std::mem::size_of::<StorageFileHeader>()) 
-    };
-    file.write(slice).unwrap();
+    let file_header_data = unsafe { std::slice::from_raw_parts( &header as *const _ as *const u8, std::mem::size_of::<StorageFileHeader>()) };
 
-    println!("Writing entity to disk");
     let entity_data = unsafe { 
         entities
             .iter()
@@ -403,12 +471,13 @@ fn write_entity_to_disk(
             .collect::<Vec<u8>>() 
     };
 
-    let file_data = slice
+    let file_data = file_header_data
         .into_iter()
         .chain(entity_data.iter())
         .map(|byte| *byte)
         .collect::<Vec<u8>>();
-    file.write_all(file_data.as_slice()).unwrap()
+    file.write_all(file_data.as_slice()).unwrap();
+    println!("Entities written to the disk");
 }
 
 
@@ -520,101 +589,6 @@ pub enum WorldError {
     UnableToParseFile,
 }
 
-/*
-pub fn load_level(source: &str, world: *mut World) -> Result<(), WorldError> {
-    let path = format!("{}/{}", WORLD_LEVELS_DIR, source);
-
-    if !std::path::Path::new(&path).exists() {
-        return Err(WorldError::LevelNotFound);
-    }
-
-    let file = match File::open(path) {
-        Ok(file) => file,
-        Err(_) => return Err(WorldError::FailedToOpenLevel),
-    };
-
-    let buff_reader = BufReader::new(file);
-
-    let level: Level = match serde_json::from_reader(buff_reader) {
-        Ok(level) => level,
-        Err(_) => return Err(WorldError::UnableToParseFile),
-    };
-
-    let world_ref = unsafe { &mut *world };
-    for shader in level.shader_programs {
-        world_ref.resources.add_resource(
-            AssetSource::Shader(
-                shader.name,
-                shader.vert.clone(),
-                shader.vert.clone(),
-                shader.geo.clone(),
-            ),
-            true,
-        );
-    }
-
-    for (obj_type, source) in level.meshes {
-        world_ref
-            .resources
-            .add_resource(AssetSource::Mesh(obj_type, source), true);
-    }
-
-    for entity in level.entities.iter() {
-        let id = world_ref.create_entity();
-
-        let translation = Vector3::new(
-            entity.transform.translation[0],
-            entity.transform.translation[1],
-            entity.transform.translation[2],
-        );
-
-        let rotation = Vector3::new(
-            entity.transform.rotation[0],
-            entity.transform.rotation[1],
-            entity.transform.rotation[2],
-        );
-
-        world_ref.components.positionable[id] = Some(TransformComponent::new(
-            translation,
-            rotation,
-            entity.transform.scale,
-        ));
-
-        let get_status = |s: &Body| match s {
-            Body::Static => BodyStatus::Static,
-            Body::Kinematic => BodyStatus::Kinematic,
-            Body::Dynamic => BodyStatus::Dynamic,
-        };
-
-        let velocity = Vector3::new(
-            entity.physics.velocity[0],
-            entity.physics.velocity[1],
-            entity.physics.velocity[2],
-        );
-
-        let material = MaterialHandle::new(BasicMaterial::new(
-            entity.physics.restitution,
-            entity.physics.friction,
-        ));
-
-        world_ref.components.physics[id] = Some(PhysicsComponent::new(
-            entity.physics.mass,
-            entity.physics.gravity,
-            get_status(&entity.physics.body),
-            velocity,
-            material,
-        ));
-
-        //Hello world
-        world_ref.components.renderables[id] = Some(RenderComponent::new(
-            entity.render.mesh.clone(),
-            entity.render.shader.clone(),
-        ));
-    }
-
-    Ok(())
-}
-*/
 
 fn load_game_world() -> Vec<Entity>{
     unimplemented!()

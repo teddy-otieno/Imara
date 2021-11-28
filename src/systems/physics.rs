@@ -71,11 +71,8 @@ impl Physics {
         world: &mut World,
         event_manager: *mut EventManager,
     ) -> Result<(), ()> {
-        let mesh_data = match world.resources.mesh_data.try_read() {
-            Ok(dat) => dat,
-            Err(_) => return Err(()),
-        };
-
+        let resources_lock = world.resources.read().unwrap();
+        let mesh_data = &resources_lock.mesh_data;
         for event in unsafe { &mut *event_manager }.get_engine_events() {
             //TODO(teddy) Integrate with pending events
             match event.event_type {

@@ -183,8 +183,10 @@ impl Renderer {
 
                     let mesh_label = &render_component.mesh_label;
 
-                    let mesh_data = match world.resources.mesh_data.try_read() {
-                        Ok(mesh_container) => mesh_container,
+                let resources_lock = world.resources.read().unwrap();
+                let mesh_data = &resources_lock.mesh_data;
+                    let resources = match world.resources.try_read() {
+                        Ok(resources) => resources,
 
                         Err(_) => {
                             if !event.is_pending_for(SystemType::RenderSystem) {
@@ -194,6 +196,8 @@ impl Renderer {
                             continue;
                         }
                     };
+
+                    let mesh_data = &resources.mesh_data;
 
                     if let Some(some_mesh) = mesh_data.get(mesh_label) {
                         match &**some_mesh {
@@ -240,14 +244,16 @@ impl Renderer {
 
                     let mesh_label = &render_component.mesh_label;
 
-                    let mesh_data = match world.resources.mesh_data.try_read() {
-                        Ok(mesh_container) => mesh_container,
+                    let resources = &match world.resources.try_read() {
+                        Ok(it) => it,
 
                         Err(_) => {
                             event_manager.add_pending(event, SystemType::RenderSystem);
                             continue;
                         }
                     };
+
+                    let mesh_data = &resources.mesh_data;
 
                     if let Some(some_mesh) = mesh_data.get(mesh_label) {
                         if let Some(mesh) = &**some_mesh {
@@ -284,7 +290,7 @@ impl System for Renderer {
     fn init(&mut self, world: &mut World, engine: &mut Engine) -> Result<(), String> {
         let shader_name = SCREEN_SHADER!();
 
-        let resources = world.resources.shaders.read().unwrap();
+        let resources = &world.resources.read().unwrap().shaders;
         let screen_shader = match resources.get(&shader_name) {
 
             Some(id) => {

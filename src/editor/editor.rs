@@ -158,13 +158,8 @@ fn create_entity(
     let id = world.create_entity();
 
     let words: Vec<&str> = file_path.split("/").collect();
-    let mesh_id = match world.resources.add_resource(
-        AssetSource::Mesh(ObjType::Normal, String::from(words[words.len() - 1])),
-        true,
-    ) {
-        ResourceResult::Mesh(id) => id,
-        _ => unreachable!(),
-    };
+    let mesh_id = String::from(words[words.len() - 1]);
+    world.add_resource(AssetSource::Mesh(ObjType::Normal, String::from(words[words.len() - 1])));
 
     world.components.renderables[id] = Some(RenderComponent::new(mesh_id, shader_label));
     world.components.positionable[id] = Some(TransformComponent::new(

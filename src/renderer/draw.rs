@@ -12,8 +12,8 @@ use crate::utils::get_at_index;
 
 #[derive(Debug)]
 pub enum DrawError {
-    ShaderNotFound,
-    ShaderNotAvailable,
+    ShaderNotFound(String),
+    ShaderNotAvailable(String),
 }
 
 #[repr(C)]
@@ -200,7 +200,7 @@ pub unsafe fn draw_normal_object<T>(
 where
     T: FnOnce(),
 {
-    let resources = world.resources.shaders.read().unwrap();
+    let resources = &world.resources.read().unwrap().shaders;
 
     let shader = match resources.get(shader_label) {
         Some(id) => {
@@ -208,10 +208,10 @@ where
                 *shader_id
             } else {
                 //Shader is not available skip
-                return Err(DrawError::ShaderNotAvailable);
+                return Err(DrawError::ShaderNotAvailable(shader_label.clone()));
             }
         }
-        None => return Err(DrawError::ShaderNotFound),
+        None => return Err(DrawError::ShaderNotFound(shader_label.clone())),
     };
 
     let view_matrix: Matrix4<f32> = camera.view();

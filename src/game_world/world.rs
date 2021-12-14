@@ -358,9 +358,25 @@ impl World {
         let world_entities_file = File::open(GAME_WORLD_FILE_NAME).unwrap();
         let mut buffered_reader = BufReader::new(world_entities_file);
 
+        //Read the entire file to buffer
+        let mut temp_buffer = vec![];
+
+        let write_ref = unsafe {
+            (&buffered_reader as *const BufReader<File> as *mut BufReader<File>)
+                    .as_mut()
+                    .unwrap()
+        };
+        while let Ok(buf) = buffered_reader.fill_buf() {
+            temp_buffer.extend_from_slice(&buf);
+            if buf.len() == 0 {
+                break;
+            }
+            write_ref.consume(buf.len());
+        }
+
+
+        let file_header_buffer = &temp_buffer[0..SIZE_OF_HEADER];
         //Loading the file header to obtain configurations for the world
-        let mut file_header_buffer /*:[u8; SIZE_OF_HEADER] */ = vec![0; SIZE_OF_HEADER];
-        buffered_reader.read_exact(&mut file_header_buffer).unwrap();
 
         let file_header: MaybeUninit<StorageFileHeader> = MaybeUninit::zeroed();
         let mut storage_header = unsafe { file_header.assume_init() };
@@ -377,17 +393,21 @@ impl World {
         buffered_reader.consume(SIZE_OF_HEADER);
 
         //Loading the entities
-        let mut entities_data_buffer = vec![0; SIZE_OF_ENTITY  * storage_header.total_entities as usize];
-        buffered_reader.read_exact(&mut entities_data_buffer).unwrap();
+        //
 
+
+
+        let entities_data_buffer = &temp_buffer[SIZE_OF_HEADER..];
+
+        dbg!(entities_data_buffer.len());
         dbg!(storage_header.total_entities);
-        dbg!(entities_data_buffer.len() / SIZE_OF_ENTITY);
+        dbg!(entities_data_buffer.len() as f32 / SIZE_OF_ENTITY as f32);
 
-        let entities_memory_area = entities_data_buffer.into_boxed_slice();
-        let loaded_entities = unsafe {Box::from_raw(Box::into_raw(entities_memory_area) as *mut [Entity])};
+        let loaded_entities: &[Entity] = unsafe { std::mem::transmute::<&[u8], &[Entity]>(entities_data_buffer) };
 
         for i in 0..storage_header.total_entities {
             // dbg!(&loaded_entities[i as usize].transform);
+            println!("{:?}", loaded_entities[i as usize]);
             self.create_loaded_entity(&loaded_entities[i as usize]).unwrap();
         }
     }

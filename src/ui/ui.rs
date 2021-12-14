@@ -1,7 +1,7 @@
+use std::any::Any;
 use std::ffi::c_void;
 use std::ptr::null;
 use std::rc::Rc;
-use std::any::Any;
 
 use glfw::MouseButton;
 use nalgebra::Vector3;
@@ -105,7 +105,9 @@ pub trait ViewContainer: View {
 }
 
 #[inline(always)]
-pub fn cast_view<'a, 'b, T: View + 'b +'static>(view: &'a mut Rc<&mut dyn View>) -> Option<&'a mut T> {
+pub fn cast_view<'a, 'b, T: View + 'b + 'static>(
+    view: &'a mut Rc<&mut dyn View>,
+) -> Option<&'a mut T> {
     let view_obj = Rc::get_mut(view).unwrap();
     view_obj.as_any().downcast_mut::<T>()
 }
@@ -329,7 +331,9 @@ macro_rules! button_clicked {
 }
 
 impl View for TextView {
-    fn as_any(&mut self) -> Box<&mut dyn Any> { Box::new(self) }
+    fn as_any(&mut self) -> Box<&mut dyn Any> {
+        Box::new(self)
+    }
     fn get_id(&self) -> &str {
         &(*self.view.id)
     }
@@ -470,7 +474,11 @@ impl View for TextView {
     }
 
     fn get_element_by_id(&mut self, id: &str) -> Option<Rc<&mut dyn View>> {
-        if id == self.get_id() { Some(Rc::new(self)) } else { None }
+        if id == self.get_id() {
+            Some(Rc::new(self))
+        } else {
+            None
+        }
     }
 }
 
@@ -524,28 +532,26 @@ pub fn init_ui(engine: &mut Engine, world: &mut World) -> UIResult {
         engine.ui_render_object = Some(FrameRenderObject::new(engine.camera.view_port, true));
     }
 
-    let _ = world.add_resource(
-        AssetSource::Shader(
-            font_shader!(),
-            String::from("font_vert.glsl"),
-            String::from("font_frag.glsl"),
-            None,
-        ),
-    );
+    let _ = world.add_resource(AssetSource::Shader(
+        font_shader!(),
+        String::from("font_vert.glsl"),
+        String::from("font_frag.glsl"),
+        None,
+    ));
 
-    let _ = world.add_resource(
-        AssetSource::Shader(
-            quad_shader!(),
-            String::from("ui_quad_vert.glsl"),
-            String::from("ui_quad_frag.glsl"),
-            None,
-        ),
-    );
+    let _ = world.add_resource(AssetSource::Shader(
+        quad_shader!(),
+        String::from("ui_quad_vert.glsl"),
+        String::from("ui_quad_frag.glsl"),
+        None,
+    ));
 
     let shader_container_ref = &world.resources.read().unwrap().shaders;
 
     loop {
-        if shader_container_ref.get(&font_shader!()).is_some() && shader_container_ref.get(&quad_shader!()).is_some() {
+        if shader_container_ref.get(&font_shader!()).is_some()
+            && shader_container_ref.get(&quad_shader!()).is_some()
+        {
             let shader_id = &shader_container_ref[&font_shader!()].unwrap();
             let quad_shader_id = &shader_container_ref[&quad_shader!()].unwrap();
             unsafe {
@@ -671,7 +677,9 @@ impl View for SimpleUIContainer {
         self.view.position = position;
     }
 
-    fn as_any(&mut self) -> Box<&mut dyn Any> { Box::new(self) }
+    fn as_any(&mut self) -> Box<&mut dyn Any> {
+        Box::new(self)
+    }
 
     fn get_id(&self) -> &str {
         &(self.view.id)
@@ -787,7 +795,6 @@ impl View for SimpleUIContainer {
     }
 
     fn get_element_by_id(&mut self, id: &str) -> Option<Rc<&mut dyn View>> {
-
         if self.get_id() == id {
             return Some(Rc::new(self));
         }

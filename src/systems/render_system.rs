@@ -6,8 +6,8 @@ use std::time::Instant;
 use nalgebra::Vector3;
 
 use super::system::{System, SystemType};
-use crate::core::{Engine, EventManager, EventType, ViewPortDimensions, bind_texture};
-use crate::game_world::components::TransformComponent;
+use crate::core::{Engine, EventManager, Camera, EventType, Light, ViewPortDimensions, bind_texture};
+use crate::game_world::components::{TransformComponent, RenderComponent};
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::logs::{LogManager, Logable};
 use crate::renderer::draw::*;
@@ -34,6 +34,92 @@ impl Logable for RenderSystemLogObject {
     fn to_string(&self) -> String {
         self.text.clone()
     }
+}
+
+type ComponentsForRender<'a> = (EntityID, &'a RenderComponent, &'a TransformComponent);
+
+impl World {
+    //TODO(teddy) construct an iterator
+    fn get_render_components(&self) -> Vec<ComponentsForRender> {
+        let mut render_components = vec![];
+        for entity in &self.entities {
+            let render = match self.components.renderables.get(*entity) {
+                Some(comp) if comp.is_some() => comp.as_ref().unwrap(),
+                _ => continue
+            };
+
+            let tranform = match self.components.positionable.get(*entity) {
+                Some(comp) if comp.is_some() => comp.as_ref().unwrap(),
+                _ => continue
+            };
+
+            render_components.push((*entity, render, tranform))
+        }
+        render_components
+    }
+}
+
+struct HighlightReferences<'a> {
+    world: &'a World,
+    shader_label: &'a String,
+    camera: &'a Camera,
+    transform: &'a TransformComponent,
+    light: &'a Light,
+    object: &'a RenderObject
+}
+
+unsafe fn draw_with_highlight(data: HighlightReferences) {
+    gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+    gl::StencilMask(0xFF);
+
+    let draw_params = || {
+        // gl::Enable(gl::DEPTH_TEST);
+        // gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+        // gl::StencilMask(0xFF);
+    };
+
+    gl::Enable(gl::DEPTH_TEST);
+    gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+    gl::StencilMask(0xFF);
+
+    draw_normal_object(
+        data.world,
+        data.shader_label,
+        data.camera,
+        data.object,
+        data.transform,
+        data.light,
+        draw_params,
+        )
+        .unwrap();
+
+    let scaled_transform = TransformComponent::new(
+        data.transform.position.translation.vector,
+        Vector3::y(),
+        1.1,
+        );
+
+    //let scaled_shader = &world.resources.shaders[&border_shader!()];
+    let scaled_params = || {
+        // gl::StencilFunc(gl::EQUAL, 1, 0xFF);
+        // gl::StencilMask(0x00);
+        // gl::Disable(gl::DEPTH_TEST);
+    };
+
+    //Drawing scaled version of the object
+    gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
+    gl::StencilMask(0x00);
+    gl::Disable(gl::DEPTH_TEST);
+    draw_normal_object(
+        &data.world,
+        &border_shader!(),
+        &data.camera,
+        data.object,
+        &data.transform,
+        &data.light,
+        scaled_params,
+        )
+        .unwrap();
 }
 
 pub struct Renderer {
@@ -66,94 +152,40 @@ impl Renderer {
         gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
         gl::Enable(gl::DEPTH_TEST);
 
-        for i in world.entities.iter() {
-            let render_component = match &world.components.renderables[*i] {
-                Some(component) if component.should_update => component,
-                _ => continue,
-            };
-
-            let transform_component = match &world.components.positionable[*i] {
-                Some(component) => component,
+        for (i, render_component, transform_component) in world.get_render_components() {
+            let render_object = match self.normal_objects.get(&i) {
+                Some(object) => object,
                 None => continue,
             };
 
-            if render_component.textures.len() == 0 {
-                let render_object = match self.normal_objects.get(i) {
-                    Some(object) => object,
-                    None => continue,
+            if render_component.highlight.is_none() {
+                let draw_params = || {
+                    gl::Enable(gl::CULL_FACE);
+                    gl::Enable(gl::DEPTH_TEST);
+                    gl::DepthFunc(gl::LESS);
                 };
 
-                if let Some(_) = &world.components.highlightable[*i] {
-                    gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
-                    gl::StencilMask(0xFF);
-
-                    let draw_params = || {
-                        // gl::Enable(gl::DEPTH_TEST);
-                        // gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
-                        // gl::StencilMask(0xFF);
-                    };
-
-                    gl::Enable(gl::DEPTH_TEST);
-                    gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
-                    gl::StencilMask(0xFF);
-
-                    draw_normal_object(
-                        &world,
-                        &render_component.shader_label,
-                        &engine.camera,
-                        render_object,
-                        &transform_component,
-                        &engine.dir_lights,
-                        draw_params,
-                    )
-                    .unwrap();
-
-                    let scaled_transform = TransformComponent::new(
-                        transform_component.position.translation.vector,
-                        Vector3::y(),
-                        1.1,
-                    );
-
-                    //let scaled_shader = &world.resources.shaders[&border_shader!()];
-                    let scaled_params = || {
-                        // gl::StencilFunc(gl::EQUAL, 1, 0xFF);
-                        // gl::StencilMask(0x00);
-                        // gl::Disable(gl::DEPTH_TEST);
-                    };
-
-                    //Drawing scaled version of the object
-                    gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
-                    gl::StencilMask(0x00);
-                    gl::Disable(gl::DEPTH_TEST);
-                    draw_normal_object(
-                        &world,
-                        &border_shader!(),
-                        &engine.camera,
-                        render_object,
-                        &scaled_transform,
-                        &engine.dir_lights,
-                        scaled_params,
-                    )
-                    .unwrap();
-                } else {
-                    let draw_params = || {
-                        gl::Enable(gl::CULL_FACE);
-                        gl::Enable(gl::DEPTH_TEST);
-                        gl::DepthFunc(gl::LESS);
-                    };
-
-                    draw_normal_object(
-                        &world,
-                        &render_component.shader_label,
-                        &engine.camera      ,
-                        render_object,
-                        &transform_component,
-                        &engine.dir_lights,
-                        draw_params,
-                    )
-                    .unwrap()
-                }
+                draw_normal_object(
+                    &world,
+                    &render_component.shader_label,
+                    &engine.camera      ,
+                    render_object,
+                    &transform_component,
+                    &engine.dir_lights,
+                    draw_params,
+                )
+                .unwrap();
+                continue;
             }
+
+            draw_with_highlight(HighlightReferences { 
+                world: &world, 
+                shader_label: &render_component.shader_label, 
+                camera: &engine.camera, 
+                transform: &transform_component, 
+                light: &engine.dir_lights, 
+                object: &render_object
+            });
         }
 
         let ViewPortDimensions {width, height} = engine.camera.view_port;

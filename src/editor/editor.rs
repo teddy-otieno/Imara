@@ -244,9 +244,9 @@ fn handle_world_events(
     for event in event_manager.get_engine_events() {
         match event.event_type {
             EventType::RayCasted(CastedRay { id: _, entity }) if entity.is_some() => {
-                world.components.highlightable[entity.unwrap()] = Some(HighlightComponent {
-                    color: [0.0, 1.0, 0.0],
-                });
+                //world.components.renderables[entity.unwrap()] = Some(HighlightComponent {
+                 //   color: [0.0, 1.0, 0.0],
+                //});
             }
             _ => (),
         }

@@ -5,7 +5,7 @@ use std::ffi::CString;
 use nalgebra::{Matrix4, Point3, Point4, Vector3};
 
 use crate::core::{Camera, Engine, Light, ViewPortDimensions};
-use crate::game_world::components::{HighlightComponent, TransformComponent};
+use crate::game_world::components::{TransformComponent};
 use crate::game_world::world::World;
 use crate::obj_parser::{NormalObj, TexturedObj};
 use crate::utils::get_at_index;

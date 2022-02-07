@@ -2,11 +2,11 @@ use nalgebra::{Isometry3, Vector3};
 use nphysics3d::material::MaterialHandle;
 use nphysics3d::object::{BodyStatus, DefaultBodyHandle, DefaultColliderHandle};
 
+
 pub struct Components {
     pub renderables: Vec<Option<RenderComponent>>,
     pub positionable: Vec<Option<TransformComponent>>,
     pub physics: Vec<Option<PhysicsComponent>>,
-    pub highlightable: Vec<Option<HighlightComponent>>,
 }
 
 impl Components {
@@ -15,7 +15,6 @@ impl Components {
             renderables: Vec::with_capacity(capacity),
             positionable: Vec::with_capacity(capacity),
             physics: Vec::with_capacity(capacity),
-            highlightable: Vec::with_capacity(capacity),
         }
     }
 
@@ -23,13 +22,7 @@ impl Components {
         self.renderables.push(None);
         self.positionable.push(None);
         self.physics.push(None);
-        self.highlightable.push(None);
     }
-}
-
-#[derive(Debug)]
-pub struct HighlightComponent {
-    pub color: [f32; 3],
 }
 
 #[derive(Debug)]
@@ -38,6 +31,7 @@ pub struct RenderComponent {
     pub mesh_label: String,
     pub shader_label: String,
     pub textures: Vec<String>,
+    pub highlight: Option<[f32; 3]>
 }
 
 impl RenderComponent {
@@ -49,6 +43,7 @@ impl RenderComponent {
             mesh_label,
             shader_label,
             textures: vec![],
+            highlight: None
         }
     }
 

@@ -104,7 +104,7 @@ impl Physics {
                         //We only process already loaded mesh data
                         //When the data is not loaded i.e. `None` we append the event to pending events and Skip
                         //FIXME(teddy): This might cause a bug
-                        if let Some(mesh) = &**(mesh_data.get(mesh_label).unwrap()) {
+                        if let Some(mesh) = &(mesh_data.get(mesh_label).unwrap()).mesh_type {
                             //Note(teddy) Thread this operation
                             let trimesh = match mesh {
                                 MeshType::Normal(obj) => {

@@ -59,7 +59,7 @@ pub enum ResourceResult {
 }
 
 pub struct Mesh {
-    mesh_type: Option<MeshType>,
+    pub mesh_type: Option<MeshType>,
     is_loaded: bool,
 }
 
@@ -69,20 +69,6 @@ impl Mesh {
             mesh_type: None,
             is_loaded: false,
         }
-    }
-}
-
-impl Deref for Mesh {
-    type Target = Option<MeshType>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.mesh_type
-    }
-}
-
-impl DerefMut for Mesh {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.mesh_type
     }
 }
 

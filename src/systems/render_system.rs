@@ -6,7 +6,7 @@ use std::time::Instant;
 use nalgebra::Vector3;
 
 use super::system::{System, SystemType};
-use crate::core::{Engine, EventManager, Camera, EventType, Light, ViewPortDimensions, bind_texture};
+use crate::core::{Engine, EventManager, Camera, EventType, Light, ViewPortDimensions, bind_texture, Event};
 use crate::game_world::components::{TransformComponent, RenderComponent};
 use crate::game_world::world::{EntityID, MeshType, World};
 use crate::logs::{LogManager, Logable};
@@ -57,6 +57,13 @@ impl World {
         }
         render_components
     }
+
+    fn get_render_component(&self, id: EntityID) -> Option<&RenderComponent> {
+        match self.components.renderables.get(id) { //TODO(teddy) Refactor
+            Some(comp) => comp.as_ref(),
+            None => None
+        }
+    }
 }
 
 struct HighlightReferences<'a> {
@@ -68,6 +75,7 @@ struct HighlightReferences<'a> {
     object: &'a RenderObject
 }
 
+#[inline]
 unsafe fn draw_with_highlight(data: HighlightReferences) {
     gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
     gl::StencilMask(0xFF);
@@ -195,117 +203,123 @@ impl Renderer {
         //println!("{:?}", texture_data.len());
     }
 
+    fn allocate_entity(
+        &mut self, 
+        event: Event, 
+        id: EntityID, 
+        event_manager: &mut EventManager, 
+        mesh: &Option<MeshType>
+    ) -> Result<(), String>{
+        let mesh_type = match mesh {
+            Some(e) => e,
+            None => {
+                if !event.is_pending_for(SystemType::RenderSystem) {
+                    event_manager.add_pending(event, SystemType::RenderSystem);
+                }
+                return Err(format!(""));
+            }
+        };
+
+        match mesh_type {
+            MeshType::Textured(obj) => {
+                let _render_object = unsafe { init_textured_object(&obj) };
+            },
+            MeshType::Normal(obj) => {
+                let render_object = unsafe { init_normal_object(&obj) };
+
+                if let Some(_) = self.normal_objects.insert(id, render_object) {
+                    panic!("Weird, looks render object for this entity exists.")
+                };
+
+                if event.is_pending_for(SystemType::RenderSystem) {
+                    event_manager
+                        .remove_pending(event.id, SystemType::RenderSystem);
+                }
+            }
+        };
+        Ok(())
+
+    }
+
+    fn handle_entity_creation(
+        &mut self, 
+        id: EntityID, 
+        event: Event, 
+        event_manager: &mut EventManager, 
+        world: &mut World
+    ) -> Result<(), String> {
+        if (self.normal_objects.contains_key(&id) || self.textured_objects.contains_key(&id)) 
+            && event.is_pending_for(SystemType::RenderSystem) {
+            return Err(format!(""));
+        }
+        let mesh_label = match world.get_render_component(id) {
+            Some(comp) => &comp.mesh_label,
+            None => return Err(format!("Component was not found")) ,
+        };
+
+        match world.resources.try_read() {
+            Ok(res) if res.mesh_data.contains_key(mesh_label) =>
+                self.allocate_entity(event, id, event_manager, &res.mesh_data[mesh_label].mesh_type),
+            Err(_) => {
+                if !event.is_pending_for(SystemType::RenderSystem) {
+                    event_manager.add_pending(event, SystemType::RenderSystem);
+                }
+                Err(format!(""))
+            },
+            _ => Err(format!(""))
+        }
+    }
+
+    fn free_objects(&mut self, id: EntityID, mesh: &Option<MeshType>) -> Result <(), String> {
+        if let Some(mesh_type) = mesh {
+            match mesh_type {
+                MeshType::Textured(_obj) => {
+                    remove_textured_object(
+                        id,
+                        self.textured_objects.remove(&id).unwrap(),
+                    );
+                }
+
+                MeshType::Normal(_obj) => {
+                    remove_normal_object(
+                        id,
+                        self.normal_objects.remove(&id).unwrap(),
+                    );
+                }
+            }
+
+            Ok(())
+        } else {
+            Err("".to_string())
+        }
+    }
+
+    fn remove_entity(&mut self, id: EntityID, event: Event, event_manager: &mut EventManager, world: &mut World) -> Result<(), String> {
+        let mesh_label = match world.components.renderables[id].as_mut() {
+            Some(comp) => &comp.mesh_label,
+            None => return Err("".to_string()),
+        };
+
+        match world.resources.try_read() {
+            Ok(res) if res.mesh_data.contains_key(mesh_label) => self.free_objects(id, &res.mesh_data[mesh_label].mesh_type),
+            Err(_) => {
+                event_manager.add_pending(event, SystemType::RenderSystem);
+                Err("".to_string())
+            }
+            _ => Err("".to_string())
+        }
+    }
+
     fn handle_system_events(&mut self, event_manager: &mut EventManager, world: &mut World) {
 
         for event in event_manager.get_engine_events().clone().into_iter() {
             match event.event_type {
                 EventType::EntityCreated(id) => {
-                    //If the object was already loaded skip
-                    if self.normal_objects.contains_key(&id) || self.textured_objects.contains_key(&id) {
-                        if event.is_pending_for(SystemType::RenderSystem) {
-                            event_manager.remove_pending(event.id, SystemType::RenderSystem);
-                        }
-                        continue;
-                    }
-
-                    let render_component = match world.components.renderables[id].as_ref() {
-                        Some(comp) => comp,
-                        None => continue,
-                    };
-
-                    let mesh_label = &render_component.mesh_label;
-
-                let resources_lock = world.resources.read().unwrap();
-                let mesh_data = &resources_lock.mesh_data;
-                    let resources = match world.resources.try_read() {
-                        Ok(resources) => resources,
-
-                        Err(_) => {
-                            if !event.is_pending_for(SystemType::RenderSystem) {
-                                event_manager.add_pending(event, SystemType::RenderSystem);
-                            }
-
-                            continue;
-                        }
-                    };
-
-                    let mesh_data = &resources.mesh_data;
-
-                    if let Some(some_mesh) = mesh_data.get(mesh_label) {
-                        match &**some_mesh {
-                            Some(mesh) => match mesh {
-                                MeshType::Textured(obj) => {
-                                    let _render_object = unsafe { init_textured_object(&obj) };
-                                }
-
-                                MeshType::Normal(obj) => {
-                                    let render_object = unsafe { init_normal_object(&obj) };
-
-                                    if let Some(_) = self.normal_objects.insert(id, render_object) {
-                                        panic!("Weird, looks render object for this entity exists.")
-                                    };
-
-                                    if event.is_pending_for(SystemType::RenderSystem) {
-                                        event_manager
-                                            .remove_pending(event.id, SystemType::RenderSystem);
-                                    }
-                                }
-                            },
-
-                            None => {
-                                if !event.is_pending_for(SystemType::RenderSystem) {
-                                    event_manager.add_pending(event, SystemType::RenderSystem);
-                                }
-
-                                continue;
-                            }
-                        }
-                    } else {
-                        eprintln!("Looks like mesh of id {} was not loaded ", mesh_label);
-                        continue;
-                    }
+                    self.handle_entity_creation(id, event, event_manager, world);
                 }
 
                 EventType::EntityRemoved(id) => {
-                    //Free VBOs and others
-
-                    let render_component = match world.components.renderables[id].as_mut() {
-                        Some(comp) => comp,
-                        None => continue,
-                    };
-
-                    let mesh_label = &render_component.mesh_label;
-
-                    let resources = &match world.resources.try_read() {
-                        Ok(it) => it,
-
-                        Err(_) => {
-                            event_manager.add_pending(event, SystemType::RenderSystem);
-                            continue;
-                        }
-                    };
-
-                    let mesh_data = &resources.mesh_data;
-
-                    if let Some(some_mesh) = mesh_data.get(mesh_label) {
-                        if let Some(mesh) = &**some_mesh {
-                            match mesh {
-                                MeshType::Textured(_obj) => {
-                                    remove_textured_object(
-                                        id,
-                                        self.textured_objects.remove(&id).unwrap(),
-                                    );
-                                }
-
-                                MeshType::Normal(_obj) => {
-                                    remove_normal_object(
-                                        id,
-                                        self.normal_objects.remove(&id).unwrap(),
-                                    );
-                                }
-                            }
-                        }
-                    }
+                    self.remove_entity(id, event, event_manager, world);
                 }
 
                 _ => (),
